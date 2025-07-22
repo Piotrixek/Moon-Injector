@@ -1,5 +1,4 @@
-﻿// #define NOMINMAX is removed to fix the redefinition warning
-#include <Windows.h>
+﻿#include <Windows.h>
 #include <tchar.h>
 #include <shellapi.h>
 #include <gdiplus.h>
@@ -28,7 +27,6 @@
 #include "injector.h"
 #include "tinyfiledialogs.h"
 
-// Global controller for our web UI
 std::unique_ptr<UltralightController> g_ultralight_controller;
 
 
@@ -95,7 +93,6 @@ int main(int, char**)
         return 1;
     }
 
-    // this is where we bind our c++ functions so javascript can call them
     g_ultralight_controller->AddCallback("native_getProcesses",
         JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
             auto procs = injector::getProcs();
@@ -117,18 +114,42 @@ int main(int, char**)
             if (filePath) {
                 return ultralight::JSValue(filePath);
             }
-         //   return ultralight::JSValue(ultralight::JSValue::Type::Null);
+           // return ultralight::JSValue(ultralight::JSValue::Type::Null);
             })
     );
 
     g_ultralight_controller->AddCallback("native_inject",
         JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
-            if (args.size() != 2 || !args[0].IsNumber() || !args[1].IsString()) {
+            if (args.size() != 5 || !args[0].IsNumber() || !args[1].IsString() || !args[2].IsString() || !args[3].IsBoolean() || !args[4].IsBoolean()) {
                 return ultralight::JSValue("Invalid arguments for injection.");
             }
+
             DWORD pid = (DWORD)args[0].ToNumber();
             std::string dllPath = ultralight::String(args[1].ToString()).utf8().data();
-            std::string result = injector::inject(pid, dllPath);
+            std::string method = ultralight::String(args[2].ToString()).utf8().data();
+            bool erasePE = args[3].ToBoolean();
+            bool hideModule = args[4].ToBoolean();
+
+            std::string result = "";
+            if (method == "loadlibrary") {
+                result = injector::injectLoadLibrary(pid, dllPath);
+            }
+            else if (method == "apc") {
+                result = injector::injectApc(pid, dllPath);
+            }
+            else if (method == "hijack") {
+                result = injector::injectThreadHijack(pid, dllPath);
+            }
+            else if (method == "blackbone") {
+                result = injector::injectBlackBone(pid, dllPath, erasePE, hideModule);
+            }
+            else if (method == "stealth") {
+                result = injector::stealthInject(pid, dllPath);
+            }
+            else {
+                result = "Unknown injection method specified.";
+            }
+
             return ultralight::JSValue(result.c_str());
             })
     );
@@ -171,6 +192,34 @@ int main(int, char**)
             background-position: right 0.5rem center;
             background-repeat: no-repeat;
             background-size: 1.5em 1.5em;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 160px;
+            background-color: #18181b;
+            color: #d4d4d8;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -80px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+            border: 1px solid #3f3f46;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
         }
     </style>
 </head>
@@ -217,13 +266,35 @@ int main(int, char**)
         
         <footer class="flex items-stretch border-t border-zinc-800 flex-shrink-0">
             <div class="w-3/5 p-2 flex flex-col justify-center border-r border-zinc-800">
-                <label class="text-xs text-zinc-500 mb-1">Injection Method</label>
+                <div class="flex justify-between items-center mb-1">
+                    <label class="text-xs text-zinc-500">Injection Method</label>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="auto-inject-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
+                        <label for="auto-inject-check" class="text-xs text-zinc-500 select-none">Auto Inject</label>
+                    </div>
+                </div>
                 <select id="inject-method" class="w-full bg-zinc-800 border border-zinc-700 p-1 text-sm focus:outline-none focus:border-cyan-500 transition appearance-none custom-select rounded-sm">
-                    <option>LoadLibrary</option>
+                    <option value="loadlibrary">LoadLibrary (Standard)</option>
+                    <option value="apc">APC Injection (Stealth)</option>
+                    <option value="hijack">Thread Hijack (Stealth)</option>
+                    <option value="blackbone">BlackBone (Manual Map)</option>
+                    <option value="stealth">BlackBone (Driver Stealth)</option>
                 </select>
+                <div id="blackbone-options" class="mt-2 space-x-4 hidden">
+                    <div class="tooltip inline-flex items-center gap-2">
+                        <input type="checkbox" id="erase-pe-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
+                        <label for="erase-pe-check" class="text-xs text-zinc-400 select-none">Erase PE</label>
+                        <span class="tooltiptext">Wipes PE headers from memory to hinder memory analysis.</span>
+                    </div>
+                    <div class="tooltip inline-flex items-center gap-2">
+                        <input type="checkbox" id="hide-module-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
+                        <label for="hide-module-check" class="text-xs text-zinc-400 select-none">Hide Module</label>
+                        <span class="tooltiptext">Unlinks the module from PEB to hide it from module lists.</span>
+                    </div>
+                </div>
             </div>
-            <div class="w-2/5 p-2 flex items-center">
-                <button id="inject-btn" class="btn-primary w-full h-full text-lg font-bold tracking-widest rounded-md"><i class="ph-bold ph-rocket-launch"></i>INJECT</button>
+            <div class="w-2/5 p-2">
+                <button id="inject-btn" class="btn-primary w-full h-full text-base font-bold tracking-widest rounded-md flex items-center justify-center gap-2"><i class="ph-bold ph-rocket-launch"></i>INJECT</button>
             </div>
         </footer>
     </div>
@@ -233,11 +304,16 @@ int main(int, char**)
     <script>
         let selectedPid = null;
         let selectedProcName = '';
-        let dlls = []; // this will hold { path, selected }
+        let dlls = []; // this will hold { path, name, selected }
 
         const procListDiv = document.getElementById('proc-list');
         const dllListDiv = document.getElementById('dll-list');
         const statusLogDiv = document.getElementById('status-log');
+        const injectMethodSelect = document.getElementById('inject-method');
+        const blackboneOptionsDiv = document.getElementById('blackbone-options');
+        const erasePECheckbox = document.getElementById('erase-pe-check');
+        const hideModuleCheckbox = document.getElementById('hide-module-check');
+        const autoInjectCheckbox = document.getElementById('auto-inject-check');
 
         function logStatus(message, type = 'info') {
             const p = document.createElement('p');
@@ -268,15 +344,18 @@ int main(int, char**)
         }
 
         function selectProcess(element, pid, name) {
-            // clear previous selection
             const currentSelected = procListDiv.querySelector('.selected');
             if(currentSelected) currentSelected.classList.remove('selected');
 
-            // set new selection
             element.classList.add('selected');
             selectedPid = pid;
             selectedProcName = name;
             logStatus(`Process selected: ${name} (PID: ${pid})`, 'selection');
+
+            if (autoInjectCheckbox.checked) {
+                logStatus('Auto-inject triggered!', 'selection');
+                doInject();
+            }
         }
         
         function filterProcesses() {
@@ -326,7 +405,9 @@ int main(int, char**)
                 dllListDiv.appendChild(item);
             });
             const selectedCount = dlls.filter(d => d.selected).length;
-            logStatus(`${selectedCount} DLL(s) selected for injection.`, 'selection');
+            if (dlls.length > 0) {
+                 logStatus(`${selectedCount} DLL(s) selected for injection.`, 'selection');
+            }
         }
 
         function toggleDll(index) {
@@ -346,7 +427,7 @@ int main(int, char**)
             renderDlls();
         }
 
-        // --- Injection Function ---
+        // --- Injection Functions ---
         async function doInject() {
             if(!selectedPid) {
                 logStatus('No process selected!', 'error');
@@ -359,11 +440,18 @@ int main(int, char**)
                 return;
             }
 
+            const method = injectMethodSelect.value;
+            const erasePE = erasePECheckbox.checked;
+            const hideModule = hideModuleCheckbox.checked;
+
             logStatus(`Starting injection into ${selectedProcName} (PID: ${selectedPid})...`);
+            logStatus(`Method: ${injectMethodSelect.options[injectMethodSelect.selectedIndex].text}`);
+
             for (const dll of dllsToInject) {
                 const dllName = dll.name;
                 logStatus(`Injecting ${dllName}...`);
-                const result = await window.native_inject(selectedPid, dll.path);
+                
+                const result = await window.native_inject(selectedPid, dll.path, method, erasePE, hideModule);
                 
                 if (result.toLowerCase().includes('success')) {
                     logStatus(` > ${dllName}: ${result}`, 'success');
@@ -378,6 +466,16 @@ int main(int, char**)
             logStatus('Welcome to Moon Injector. Ready for action.');
             refreshProcesses();
         });
+
+        injectMethodSelect.onchange = () => {
+            if (injectMethodSelect.value === 'blackbone') {
+                blackboneOptionsDiv.classList.remove('hidden');
+                blackboneOptionsDiv.classList.add('flex');
+            } else {
+                blackboneOptionsDiv.classList.add('hidden');
+                blackboneOptionsDiv.classList.remove('flex');
+            }
+        };
 
         document.getElementById('refresh-procs').onclick = refreshProcesses;
         document.getElementById('proc-filter').onkeyup = filterProcesses;
