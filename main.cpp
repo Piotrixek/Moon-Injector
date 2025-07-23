@@ -92,7 +92,8 @@ int main(int, char**)
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
     {
         style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+        // Make the main viewport background transparent
+        style.Colors[ImGuiCol_WindowBg].w = 0.0f;
     }
 
     ImGui_ImplWin32_Init(hwnd);
@@ -230,7 +231,7 @@ int main(int, char**)
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background: transparent; }
+        body { font-family: 'Inter', sans-serif; background: transparent; overflow: hidden; }
         .font-mono { font-family: 'Roboto Mono', monospace; }
         .main-window { background-color: #0a0a0a; border: 1px solid #27272a; animation: appear 0.4s ease-out; }
         @keyframes appear { from { opacity: 0; } to { opacity: 1; } }
@@ -247,12 +248,7 @@ int main(int, char**)
         .list-item { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0.5rem; cursor: pointer; transition: all 0.15s ease-out; }
         .list-item:hover { background-color: #27272a; }
         .list-item.selected { background-color: rgba(6, 182, 212, 0.1); color: #67e8f9; border: 1px solid rgba(6, 182, 212, 0.2); }
-        .custom-select {
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-            background-position: right 0.5rem center;
-            background-repeat: no-repeat;
-            background-size: 1.5em 1.5em;
-        }
+        
         .tooltip {
             position: relative;
             display: inline-block;
@@ -337,13 +333,19 @@ int main(int, char**)
                         <label for="auto-inject-check" class="text-xs text-zinc-500 select-none">Auto Inject</label>
                     </div>
                 </div>
-                <select id="inject-method" class="w-full bg-zinc-800 border border-zinc-700 p-1 text-sm focus:outline-none focus:border-cyan-500 transition appearance-none custom-select rounded-sm">
-                    <option value="loadlibrary">LoadLibrary (Standard)</option>
-                    <option value="apc">APC Injection (Stealth)</option>
-                    <option value="hijack">Thread Hijack (Stealth)</option>
-                    <option value="blackbone">BlackBone (Manual Map)</option>
-                    <option value="stealth">BlackBone (Driver Stealth)</option>
-                </select>
+                <div class="relative w-full" id="custom-select">
+                    <button id="select-button" class="w-full bg-zinc-800 border border-zinc-700 p-1 text-sm text-left flex justify-between items-center rounded-sm focus:outline-none focus:border-cyan-500 transition">
+                        <span id="selected-value">LoadLibrary (Standard)</span>
+                        <i class="ph ph-caret-down text-zinc-500"></i>
+                    </button>
+                    <div id="options-panel" class="absolute bottom-full mb-1 w-full bg-zinc-800 border border-zinc-700 rounded-sm z-10 hidden text-sm">
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="loadlibrary">LoadLibrary (Standard)</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="apc">APC Injection (Stealth)</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="hijack">Thread Hijack (Stealth)</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="blackbone">BlackBone (Manual Map)</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="stealth">BlackBone (Driver Stealth)</div>
+                    </div>
+                </div>
                 <div id="blackbone-options" class="mt-2 space-x-4 hidden">
                     <div class="tooltip inline-flex items-center gap-2">
                         <input type="checkbox" id="erase-pe-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
@@ -369,15 +371,18 @@ int main(int, char**)
         let selectedPid = null;
         let selectedProcName = '';
         let dlls = []; // this will hold { path, name, selected }
+        let injectMethod = 'loadlibrary'; // Default value
 
         const procListDiv = document.getElementById('proc-list');
         const dllListDiv = document.getElementById('dll-list');
         const statusLogDiv = document.getElementById('status-log');
-        const injectMethodSelect = document.getElementById('inject-method');
         const blackboneOptionsDiv = document.getElementById('blackbone-options');
         const erasePECheckbox = document.getElementById('erase-pe-check');
         const hideModuleCheckbox = document.getElementById('hide-module-check');
         const autoInjectCheckbox = document.getElementById('auto-inject-check');
+        const selectButton = document.getElementById('select-button');
+        const optionsPanel = document.getElementById('options-panel');
+        const selectedValueSpan = document.getElementById('selected-value');
 
         function logStatus(message, type = 'info') {
             const p = document.createElement('p');
@@ -528,12 +533,12 @@ int main(int, char**)
                 return;
             }
 
-            const method = injectMethodSelect.value;
+            const method = injectMethod;
             const erasePE = erasePECheckbox.checked;
             const hideModule = hideModuleCheckbox.checked;
 
             logStatus(`Starting injection into ${selectedProcName} (PID: ${selectedPid})...`);
-            logStatus(`Method: ${injectMethodSelect.options[injectMethodSelect.selectedIndex].text}`);
+            logStatus(`Method: ${selectedValueSpan.textContent}`);
 
             for (const dll of dllsToInject) {
                 const dllName = dll.name;
@@ -558,15 +563,31 @@ int main(int, char**)
             loadSavedDlls();
         });
 
-        injectMethodSelect.onchange = () => {
-            if (injectMethodSelect.value === 'blackbone') {
-                blackboneOptionsDiv.classList.remove('hidden');
-                blackboneOptionsDiv.classList.add('flex');
-            } else {
-                blackboneOptionsDiv.classList.add('hidden');
-                blackboneOptionsDiv.classList.remove('flex');
-            }
+        selectButton.onclick = () => {
+            optionsPanel.classList.toggle('hidden');
         };
+
+        document.querySelectorAll('.option').forEach(option => {
+            option.onclick = () => {
+                injectMethod = option.getAttribute('data-value');
+                selectedValueSpan.textContent = option.textContent;
+                optionsPanel.classList.add('hidden');
+                
+                if (injectMethod === 'blackbone') {
+                    blackboneOptionsDiv.classList.remove('hidden');
+                    blackboneOptionsDiv.classList.add('flex');
+                } else {
+                    blackboneOptionsDiv.classList.add('hidden');
+                    blackboneOptionsDiv.classList.remove('flex');
+                }
+            };
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!document.getElementById('custom-select').contains(e.target)) {
+                optionsPanel.classList.add('hidden');
+            }
+        });
 
         document.getElementById('refresh-procs').onclick = refreshProcesses;
         document.getElementById('proc-filter').onkeyup = filterProcesses;

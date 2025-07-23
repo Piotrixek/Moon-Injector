@@ -63,32 +63,20 @@ int GetMods()
 void ShowApp(bool* p_open)
 {
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowPos(viewport->WorkPos);
-	ImGui::SetNextWindowSize(viewport->WorkSize);
-	ImGui::SetNextWindowViewport(viewport->ID);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+
+	// set the size and position for our main window
+	// max-w-4xl is 56rem -> 896px
+	ImGui::SetNextWindowSize(ImVec2(896, 560), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+
+	// make the imgui window itself transparent and match the html's rounded corners
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-	ImGuiWindowFlags host_window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
-		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-		ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
-		ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoBackground;
-
-	ImGui::Begin("DockspaceHost", NULL, host_window_flags);
-	ImGui::PopStyleVar(3);
-
-	ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
-	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
-	ImGui::End();
-
-	ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_Once);
-
-	ImGui::PushStyleColor(ImGuiCol_ResizeGrip, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-	ImGui::PushStyleColor(ImGuiCol_ResizeGripHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-
-	// added the noresize and nobackground flags here
-	ImGui::Begin("MoonInjector", p_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground);
+	// begin the main window. it has no title bar but is still movable and not resizable.
+	ImGui::Begin("MoonInjector", p_open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
 	ImVec2 content_pos = ImGui::GetCursorScreenPos();
 	ImVec2 content_size = ImGui::GetContentRegionAvail();
@@ -105,10 +93,12 @@ void ShowApp(bool* p_open)
 		ID3D11ShaderResourceView* texture = g_ultralight_controller->getTextureView();
 		if (texture)
 		{
-			ImGui::GetWindowDrawList()->AddImage(
+			// use AddImageRounded to match the window's rounded corners
+			ImGui::GetWindowDrawList()->AddImageRounded(
 				(ImTextureID)reinterpret_cast<uintptr_t>(texture),
 				content_pos,
-				ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)
+				ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y),
+				ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8.0f
 			);
 		}
 	}
@@ -194,5 +184,6 @@ void ShowApp(bool* p_open)
 	}
 
 	ImGui::End();
-	ImGui::PopStyleColor(2);
+	ImGui::PopStyleVar(3);
+	ImGui::PopStyleColor(1);
 }
