@@ -9,6 +9,11 @@ set(IMGUI_DIR "C:/libs/imgui-docking")
 set(ULTRALIGHT_SDK_DIR "C:/libs/Ultralight")
 set(TINYFILEDIALOGS_DIR "C:/libs/tinyfiledialogs")
 set(BLACKBONE_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/BlackBone")
+set(SQLITECPP_DIR "C:/libs/SQLiteCpp-3.3.3")
+
+# --- Add SQLiteCpp as a sub-project ---
+# this will build sqlite3 and sqlitecpp for us
+add_subdirectory(${SQLITECPP_DIR} extern/SQLiteCpp)
 
 # --- Gather ALL Source Files ---
 # 1. your application's source files
@@ -36,7 +41,6 @@ add_executable(${PROJECT_NAME} WIN32
 )
 
 # --- Add BlackBone as a sub-project to build from source ---
-# This ensures it's compiled with the same settings as your project, fixing the linker errors.
 add_subdirectory(${BLACKBONE_ROOT_DIR}/src/BlackBone)
 
 
@@ -50,6 +54,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${IMGUI_DIR}/backends
     ${ULTRALIGHT_SDK_DIR}/include
     ${TINYFILEDIALOGS_DIR}
+    ${SQLITECPP_DIR}/include
 
     # The main BlackBone include path.
     "${BLACKBONE_ROOT_DIR}/src"
@@ -76,8 +81,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     # Link against the BlackBone target built from source
     BlackBone
 
-    # FIX: Link against the DIA SDK library required by BlackBone's PDB parser
+    # Link against the DIA SDK library required by BlackBone's PDB parser
     "${BLACKBONE_ROOT_DIR}/src/3rd_party/DIA/lib/amd64/diaguids.lib"
+
+    # Link against SQLiteCpp and its dependency
+    SQLiteCpp
+    sqlite3
 )
 
 # --- Compiler Definitions ---

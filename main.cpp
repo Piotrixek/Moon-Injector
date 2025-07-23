@@ -26,12 +26,28 @@
 #include "menu.h"
 #include "injector.h"
 #include "tinyfiledialogs.h"
+#include "db_handler.h"
 
 std::unique_ptr<UltralightController> g_ultralight_controller;
+std::unique_ptr<DBHandler> g_db_handler;
 
 
 int main(int, char**)
 {
+    // get path for db next to the exe
+    char exePath[MAX_PATH];
+    GetModuleFileNameA(NULL, exePath, MAX_PATH);
+    std::filesystem::path dbFilePath = std::filesystem::path(exePath).parent_path() / "dll_list.db";
+
+    // setup our db handler
+    try {
+        g_db_handler = std::make_unique<DBHandler>(dbFilePath.string());
+    }
+    catch (const std::exception& e) {
+        MessageBoxA(NULL, e.what(), "Database Error", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+
     HINSTANCE hInstance = GetModuleHandle(NULL);
     const TCHAR* className = _T("ImGuiAppClass");
     HWND hwnd = SetupWindow(hInstance, className);
@@ -112,9 +128,53 @@ int main(int, char**)
             const char* filterPatterns[1] = { "*.dll" };
             const char* filePath = tinyfd_openFileDialog("Select DLL", "", 1, filterPatterns, "DLL Files", 0);
             if (filePath) {
+                // save it to the db
+                g_db_handler->addDll(filePath);
                 return ultralight::JSValue(filePath);
             }
-           // return ultralight::JSValue(ultralight::JSValue::Type::Null);
+            return ultralight::JSValue();
+            })
+    );
+
+    g_ultralight_controller->AddCallback("native_getSavedDlls",
+        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
+            auto dlls = g_db_handler->getDlls();
+            std::stringstream ss;
+            ss << "[";
+            for (size_t i = 0; i < dlls.size(); ++i) {
+                // gotta escape backslashes for json
+                std::string path = dlls[i].path;
+                size_t pos = 0;
+                while ((pos = path.find('\\', pos)) != std::string::npos) {
+                    path.replace(pos, 1, "\\\\");
+                    pos += 2;
+                }
+                ss << "\"" << path << "\"";
+                if (i < dlls.size() - 1) ss << ",";
+            }
+            ss << "]";
+            return ultralight::JSValue(ss.str().c_str());
+            })
+    );
+
+    g_ultralight_controller->AddCallback("native_removeDll",
+        JSCallbackFunc([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
+            if (args.size() == 1 && args[0].IsString()) {
+                std::string path = ultralight::String(args[0].ToString()).utf8().data();
+                g_db_handler->removeDll(path);
+            }
+            })
+    );
+
+    g_ultralight_controller->AddCallback("native_clearDlls",
+        JSCallbackFunc([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
+            g_db_handler->clearDlls();
+            })
+    );
+
+    g_ultralight_controller->AddCallback("native_quit",
+        JSCallbackFunc([hwnd](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
+            PostMessage(hwnd, WM_QUIT, 0, 0);
             })
     );
 
@@ -230,7 +290,10 @@ int main(int, char**)
                 <i class="ph-bold ph-planet text-cyan-400 text-lg"></i>
                 <h1 class="font-bold tracking-widest text-white">MOON</h1>
             </div>
-            <span class="font-mono text-xs text-zinc-500">v4.0</span>
+            <div class="flex items-center gap-2">
+                <span class="font-mono text-xs text-zinc-500">v4.0</span>
+                <button id="quit-btn" class="text-zinc-500 hover:text-red-500 transition"><i class="ph ph-power text-lg"></i></button>
+            </div>
         </header>
 
         <div class="flex-grow grid grid-cols-5 grid-rows-3 gap-2 p-2 overflow-hidden">
@@ -251,8 +314,9 @@ int main(int, char**)
                 <h2 class="text-sm font-semibold text-zinc-400 mb-2 flex-shrink-0 flex items-center gap-2"><i class="ph ph-file-code"></i>INJECTION LIST</h2>
                 <div id="dll-list" class="flex-grow overflow-y-auto border border-zinc-800 bg-black/50 p-1 font-mono text-sm space-y-1 rounded-sm">
                 </div>
-                <div class="grid grid-cols-2 gap-2 pt-2 flex-shrink-0">
+                <div class="grid grid-cols-3 gap-2 pt-2 flex-shrink-0">
                     <button id="add-dll" class="btn text-sm py-1 rounded-md"><i class="ph ph-plus"></i>Add</button>
+                    <button id="load-dlls" class="btn text-sm py-1 rounded-md"><i class="ph ph-download-simple"></i>Load</button>
                     <button id="clear-dlls" class="btn text-sm py-1 rounded-md"><i class="ph ph-trash"></i>Clear</button>
                 </div>
             </div>
@@ -375,15 +439,19 @@ int main(int, char**)
         async function addDll() {
             const path = await window.native_addDll();
             if (path) {
-                const dllName = path.substring(path.lastIndexOf('\\') + 1);
-                if (dlls.some(d => d.path === path)) {
-                    logStatus(`DLL already in list: ${dllName}`, 'error');
-                    return;
-                }
-                dlls.push({ path: path, name: dllName, selected: true });
-                logStatus(`Added DLL: ${dllName}`, 'success');
-                renderDlls();
+                addDllToList(path);
             }
+        }
+
+        function addDllToList(path) {
+            const dllName = path.substring(path.lastIndexOf('\\') + 1);
+            if (dlls.some(d => d.path === path)) {
+                logStatus(`DLL already in list: ${dllName}`, 'error');
+                return;
+            }
+            dlls.push({ path: path, name: dllName, selected: true });
+            logStatus(`Added DLL: ${dllName}`, 'success');
+            renderDlls();
         }
         
         function renderDlls() {
@@ -415,16 +483,36 @@ int main(int, char**)
             renderDlls();
         }
 
-        function removeDll(index) {
+        async function removeDll(index) {
             const removed = dlls.splice(index, 1);
-            logStatus(`Removed DLL: ${removed[0].name}`);
-            renderDlls();
+            if (removed.length > 0) {
+                await window.native_removeDll(removed[0].path);
+                logStatus(`Removed DLL: ${removed[0].name}`);
+                renderDlls();
+            }
         }
 
-        function clearDlls() {
+        async function clearDlls() {
+            await window.native_clearDlls();
             dlls = [];
             logStatus('Cleared all DLLs.');
             renderDlls();
+        }
+        
+        async function loadSavedDlls() {
+            logStatus('Loading DLLs from database...');
+            const savedDllsJson = await window.native_getSavedDlls();
+            try {
+                const savedDlls = JSON.parse(savedDllsJson);
+                if (savedDlls && savedDlls.length > 0) {
+                    savedDlls.forEach(path => addDllToList(path));
+                } else {
+                    logStatus('No saved DLLs found in database.', 'info');
+                }
+            } catch (e) {
+                logStatus('Error parsing saved DLLs from database.', 'error');
+                console.error(e);
+            }
         }
 
         // --- Injection Functions ---
@@ -462,9 +550,12 @@ int main(int, char**)
         }
 
         // --- Event Listeners ---
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             logStatus('Welcome to Moon Injector. Ready for action.');
             refreshProcesses();
+            
+            // auto-load dlls from the db on startup
+            loadSavedDlls();
         });
 
         injectMethodSelect.onchange = () => {
@@ -480,8 +571,10 @@ int main(int, char**)
         document.getElementById('refresh-procs').onclick = refreshProcesses;
         document.getElementById('proc-filter').onkeyup = filterProcesses;
         document.getElementById('add-dll').onclick = addDll;
+        document.getElementById('load-dlls').onclick = loadSavedDlls;
         document.getElementById('clear-dlls').onclick = clearDlls;
         document.getElementById('inject-btn').onclick = doInject;
+        document.getElementById('quit-btn').onclick = () => window.native_quit();
 
     </script>
 </body>
