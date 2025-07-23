@@ -188,99 +188,45 @@ namespace injector
             return "hijack failed: could not attach to process.";
         }
 
-        std::string hijackResult = "";
+        // Find LoadLibraryW
+        auto mod = proc.modules().GetModule(L"kernel32.dll");
+        if (!mod) {
+            proc.Detach();
+            return "hijack failed: could not find kernel32.dll.";
+        }
+        auto pLoadLibraryW = proc.modules().GetExport(mod, "LoadLibraryW");
+        if (!pLoadLibraryW) {
+            proc.Detach();
+            return "hijack failed: could not find LoadLibraryW export.";
+        }
 
-        // Create a new scope to ensure all MemBlocks are destructed before proc.Detach()
-        {
-            auto pThread = proc.threads().getRandom();
-            if (!pThread || !pThread->valid()) {
-                hijackResult = "hijack failed: could not find a valid thread to hijack.";
-                goto end_hijack;
-            }
+        // Create the remote function object
+        blackbone::RemoteFunction<decltype(&LoadLibraryW)> remoteLoadLibrary(proc, pLoadLibraryW->procAddress);
 
-            auto mod = proc.modules().GetModule(L"kernel32.dll");
-            if (!mod) {
-                hijackResult = "hijack failed: could not find kernel32.dll.";
-                goto end_hijack;
-            }
-            auto pLoadLibraryW = proc.modules().GetExport(mod, "LoadLibraryW");
-            if (!pLoadLibraryW) {
-                hijackResult = "hijack failed: could not find LoadLibraryW export.";
-                goto end_hijack;
-            }
+        // Get a random thread to hijack for the call
+        auto pThread = proc.threads().getRandom();
+        if (!pThread || !pThread->valid()) {
+            proc.Detach();
+            return "hijack failed: could not find a valid thread to hijack.";
+        }
 
-            // Suspend the thread before we start messing with it
-            if (!pThread->Suspend()) {
-                hijackResult = "hijack failed: could not suspend thread.";
-                goto end_hijack;
-            }
+        // Call LoadLibraryW in the context of the hijacked thread
+        auto result = remoteLoadLibrary.Call({ s2ws(dllPath).c_str() }, pThread);
 
-            std::wstring dllPathW = s2ws(dllPath);
-            auto pathMem = proc.memory().Allocate((dllPathW.length() + 1) * sizeof(wchar_t), PAGE_READWRITE);
-            if (!pathMem) {
-                pThread->Resume();
-                hijackResult = "hijack failed: could not allocate memory for dll path.";
-                goto end_hijack;
-            }
-            pathMem.result().Write(0, (dllPathW.length() + 1) * sizeof(wchar_t), dllPathW.c_str());
+        proc.Detach();
 
-            auto asmPtr = blackbone::AsmFactory::GetAssembler(proc.core().isWow64());
-            auto& a = *asmPtr;
-            auto& assembler = *a.assembler(); // Get the underlying AsmJit assembler
-
-            if (proc.core().isWow64()) {
-                blackbone::_CONTEXT32 ctx;
-                pThread->GetContext(ctx, CONTEXT_ALL);
-
-                assembler.pusha();
-                assembler.pushf();
-                a.GenCall(pLoadLibraryW->procAddress, { pathMem.result().ptr() });
-                assembler.popf();
-                assembler.popa();
-                assembler.push(ctx.Eip);
-                assembler.ret();
-
-                auto codeMem = proc.memory().Allocate(a->getCodeSize(), PAGE_EXECUTE_READWRITE);
-                if (!codeMem) {
-                    pThread->Resume();
-                    hijackResult = "hijack failed: could not allocate memory for shellcode.";
-                    goto end_hijack;
-                }
-                codeMem.result().Write(0, a->getCodeSize(), a->make());
-                ctx.Eip = static_cast<uint32_t>(codeMem.result().ptr());
-                pThread->SetContext(ctx);
-
+        if (result.success()) {
+            // Check if LoadLibraryW returned a valid module handle (non-zero)
+            if (result.result() != 0) {
+                return "thread hijack successful!";
             }
             else {
-                blackbone::_CONTEXT64 ctx;
-                pThread->GetContext(ctx, CONTEXT_ALL);
-
-                // x64 needs a "shadow space" on the stack
-                assembler.sub(asmjit::x86::rsp, 40);
-                a.GenCall(pLoadLibraryW->procAddress, { pathMem.result().ptr() });
-                assembler.add(asmjit::x86::rsp, 40);
-                assembler.mov(asmjit::x86::rax, ctx.Rip);
-                assembler.push(asmjit::x86::rax);
-                assembler.ret();
-
-                auto codeMem = proc.memory().Allocate(a->getCodeSize(), PAGE_EXECUTE_READWRITE);
-                if (!codeMem) {
-                    pThread->Resume();
-                    hijackResult = "hijack failed: could not allocate memory for shellcode.";
-                    goto end_hijack;
-                }
-                codeMem.result().Write(0, a->getCodeSize(), a->make());
-                ctx.Rip = codeMem.result().ptr();
-                pThread->SetContext(ctx);
+                return "hijack failed: LoadLibrary returned null (check DLL bits or dependencies).";
             }
-
-            pThread->Resume();
-            hijackResult = "thread hijack successful!";
-        } // All MemBlocks are destructed here
-
-    end_hijack:
-        proc.Detach();
-        return hijackResult;
+        }
+        else {
+            return "hijack failed: remote call failed. status: " + std::to_string(result.status);
+        }
     }
 
     std::string injectBlackBone(DWORD pID, const std::string& dllPath, bool erasePE, bool hideModule)
