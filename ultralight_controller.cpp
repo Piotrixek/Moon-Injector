@@ -12,6 +12,8 @@
 #include <Windows.h>
 #include <shellapi.h>
 
+#include "db_handler.h"
+
 class ConsoleLogger : public ultralight::Logger {
 public:
     virtual void LogMessage(ultralight::LogLevel log_level, const ultralight::String& message) override {
@@ -223,6 +225,7 @@ void UltralightController::UpdateTexture() {
 void UltralightController::OnDOMReady(ultralight::View* caller, uint64_t frame_id, bool is_main_frame, const ultralight::String& url) {
     if (is_main_frame) {
         BindCallbacks();
+
     }
 }
 void UltralightController::OnChangeTitle(ultralight::View* caller, const ultralight::String& title) {}
