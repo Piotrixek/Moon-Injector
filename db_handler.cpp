@@ -25,7 +25,7 @@ DBHandler::DBHandler(const std::string &dbPath) : db(dbPath, SQLite::OPEN_READWR
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception during initialization: " << e.what() << std::endl;
+        std::cerr << "sqlite exception during initialization " << e.what() << '\n';
         throw;
     }
 }
@@ -43,7 +43,7 @@ std::vector<Workspace> DBHandler::getWorkspaces()
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception in getWorkspaces: " << e.what() << std::endl;
+        std::cerr << "sqlite exception in getworkspaces " << e.what() << '\n';
     }
     return workspaces;
 }
@@ -62,7 +62,7 @@ long long DBHandler::addWorkspace(const std::string &name)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception in addWorkspace: " << e.what() << std::endl;
+        std::cerr << "sqlite exception in addworkspace " << e.what() << '\n';
     }
     return 0;
 }
@@ -78,7 +78,7 @@ void DBHandler::renameWorkspace(int id, const std::string &newName)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception in renameWorkspace: " << e.what() << std::endl;
+        std::cerr << "sqlite exception in renameworkspace " << e.what() << '\n';
     }
 }
 
@@ -92,7 +92,7 @@ void DBHandler::deleteWorkspace(int id)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception in deleteWorkspace: " << e.what() << std::endl;
+        std::cerr << "sqlite exception in deleteworkspace " << e.what() << '\n';
     }
 }
 
@@ -110,7 +110,7 @@ std::vector<DllInfo> DBHandler::getDlls(int workspaceId)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception in getDlls: " << e.what() << std::endl;
+        std::cerr << "sqlite exception in getdlls " << e.what() << '\n';
     }
     return dlls;
 }
@@ -138,14 +138,14 @@ void DBHandler::syncDlls(int workspaceId, const std::vector<std::string> &paths)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "SQLite exception in syncDlls: " << e.what() << std::endl;
+        std::cerr << "sqlite exception in syncdlls " << e.what() << '\n';
         try
         {
             db.exec("ROLLBACK");
         }
         catch (const std::exception &e2)
         {
-            std::cerr << "SQLite exception during ROLLBACK: " << e2.what() << std::endl;
+            std::cerr << "sqlite exception during rollback " << e2.what() << '\n';
         }
     }
 }

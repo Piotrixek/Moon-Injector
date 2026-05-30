@@ -91,7 +91,7 @@ int main(int, char **)
     }
     catch (const std::exception &e)
     {
-        MessageBoxA(NULL, e.what(), "Database Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(NULL, e.what(), "database error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -153,10 +153,10 @@ int main(int, char **)
     }
     catch (const std::exception &e)
     {
-        std::string error_msg = "An exception occurred during Ultralight initialization:\n\n";
+        std::string error_msg = "an exception occurred during ultralight initialization\n\n";
         error_msg += e.what();
-        error_msg += "\n\nThis usually means the 'resources' folder is missing from the executable's directory.";
-        MessageBoxA(NULL, error_msg.c_str(), "Ultralight Initialization Failed", MB_OK | MB_ICONERROR);
+        error_msg += "\n\nthis usually means the resources folder is missing from the executables directory";
+        MessageBoxA(NULL, error_msg.c_str(), "ultralight initialization failed", MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -246,11 +246,9 @@ int main(int, char **)
         "native_openDllDialog", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
                                                          const ultralight::JSArgs &args) -> ultralight::JSValue {
             const char *filterPatterns[1] = {"*.dll"};
-            const char *filePath = tinyfd_openFileDialog("Select DLL", "", 1, filterPatterns, "DLL Files", 0);
+            const char *filePath = tinyfd_openFileDialog("select dll", "", 1, filterPatterns, "dll files", 0);
             if (filePath)
-            {
                 return ultralight::JSValue(filePath);
-            }
             return ultralight::JSValue();
         }));
 
@@ -260,7 +258,6 @@ int main(int, char **)
             {
                 int workspaceId = (int)args[0].ToNumber();
                 std::string pathsStr = ultralight::String(args[1].ToString()).utf8().data();
-
                 std::vector<std::string> paths;
                 std::string delimiter = "_|_";
                 size_t pos = 0;
@@ -270,16 +267,11 @@ int main(int, char **)
                 {
                     token = s.substr(0, pos);
                     if (!token.empty())
-                    {
                         paths.push_back(token);
-                    }
                     s.erase(0, pos + delimiter.length());
                 }
                 if (!s.empty())
-                {
                     paths.push_back(s);
-                }
-
                 g_db_handler->syncDlls(workspaceId, paths);
             }
         }));
@@ -309,43 +301,48 @@ int main(int, char **)
     g_ultralight_controller->AddCallback(
         "native_inject", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
                                                   const ultralight::JSArgs &args) -> ultralight::JSValue {
-            if (args.size() != 5 || !args[0].IsNumber() || !args[1].IsString() || !args[2].IsString() ||
-                !args[3].IsBoolean() || !args[4].IsBoolean())
+            if (args.size() < 3 || !args[0].IsNumber() || !args[1].IsString() || !args[2].IsString())
             {
-                return ultralight::JSValue("Invalid arguments for injection.");
+                return ultralight::JSValue("invalid arguments for injection");
             }
 
             DWORD pid = (DWORD)args[0].ToNumber();
             std::string dllPath = ultralight::String(args[1].ToString()).utf8().data();
             std::string method = ultralight::String(args[2].ToString()).utf8().data();
-            bool erasePE = args[3].ToBoolean();
-            bool hideModule = args[4].ToBoolean();
+
+            bool erasePE = args.size() > 3 && args[3].IsBoolean() ? args[3].ToBoolean() : false;
+            bool hideModule = args.size() > 4 && args[4].IsBoolean() ? args[4].ToBoolean() : false;
+
+            std::string netVersion =
+                args.size() > 5 && args[5].IsString() ? ultralight::String(args[5].ToString()).utf8().data() : "";
+            std::string ilMethod =
+                args.size() > 6 && args[6].IsString() ? ultralight::String(args[6].ToString()).utf8().data() : "";
+            std::string ilArgs =
+                args.size() > 7 && args[7].IsString() ? ultralight::String(args[7].ToString()).utf8().data() : "";
 
             std::string result = "";
             if (method == "loadlibrary")
-            {
                 result = injector::injectLoadLibrary(pid, dllPath);
-            }
             else if (method == "apc")
-            {
                 result = injector::injectApc(pid, dllPath);
-            }
             else if (method == "hijack")
-            {
                 result = injector::injectThreadHijack(pid, dllPath);
-            }
             else if (method == "blackbone")
-            {
                 result = injector::injectBlackBone(pid, dllPath, erasePE, hideModule);
-            }
             else if (method == "stealth")
-            {
                 result = injector::stealthInject(pid, dllPath);
-            }
+            else if (method == "prommap")
+                result = injector::professionalManualMap(pid, dllPath);
+            else if (method == "standard")
+                result = injector::standardInjection(pid, dllPath);
+            else if (method == "pureil")
+                result = injector::pureILInjection(pid, netVersion, dllPath, ilMethod, ilArgs);
+            else if (method == "kstandard")
+                result = injector::kernelStandardInjection(pid, dllPath);
+            else if (method == "kmmap")
+                result = injector::kernelManualMap(pid, dllPath);
             else
-            {
-                result = "Unknown injection method specified.";
-            }
+                result = "unknown injection method specified";
 
             return ultralight::JSValue(result.c_str());
         }));
@@ -353,9 +350,9 @@ int main(int, char **)
     if (!g_ultralight_controller->IsRendererValid())
     {
         MessageBox(NULL,
-                   _T("Failed to initialize Ultralight Renderer!\n\nMake sure the 'resources' and '.dll' files from ")
-                   _T("the SDK are in the same directory as your .exe."),
-                   _T("Ultralight Error"), MB_OK | MB_ICONERROR);
+                   _T("failed to initialize ultralight renderer\n\nmake sure the resources and dll files from ")
+                   _T("the sdk are in the same directory as your exe"),
+                   _T("ultralight error"), MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -420,6 +417,9 @@ int main(int, char **)
 </head>
 <body class="flex items-center justify-center min-h-screen">
     <div class="main-window w-full max-w-5xl h-[560px] flex flex-col text-zinc-300 rounded-lg shadow-2xl">
+)HTML_PART1";
+
+    html_content += R"HTML_PART2(
         <header class="flex items-center justify-between p-2 border-b border-zinc-800 flex-shrink-0">
             <div class="flex items-center gap-2">
                 <i class="ph-bold ph-planet text-cyan-400 text-lg"></i>
@@ -432,7 +432,6 @@ int main(int, char **)
         </header>
 
         <div class="flex-grow grid grid-cols-12 gap-2 p-2 overflow-hidden">
-            
             <div class="col-span-3 flex flex-col border border-zinc-800 p-2 rounded-md">
                 <h2 class="text-sm font-semibold text-zinc-400 mb-2 flex-shrink-0 flex items-center justify-between">
                     <span class="flex items-center gap-2"><i class="ph ph-stack"></i>WORKSPACES</span>
@@ -444,8 +443,8 @@ int main(int, char **)
                 <div id="workspace-list" class="flex-grow overflow-y-auto border border-zinc-800 bg-black/50 p-1 font-mono text-xs space-y-1 rounded-sm">
                 </div>
                 <div class="grid grid-cols-2 gap-2 pt-2 flex-shrink-0">
-                    <button id="rename-workspace-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-pencil-simple"></i>Rename</button>
-                    <button id="delete-workspace-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-trash"></i>Delete</button>
+                    <button id="rename-workspace-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-pencil-simple"></i>rename</button>
+                    <button id="delete-workspace-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-trash"></i>delete</button>
                 </div>
             </div>
 
@@ -453,7 +452,7 @@ int main(int, char **)
                 <div class="flex items-center justify-between mb-2 flex-shrink-0">
                     <label class="text-sm font-semibold text-zinc-400 flex items-center gap-2"><i class="ph ph-cpu"></i>PROCESSES</label>
                     <div class="flex items-center gap-2">
-                        <input type="search" id="proc-filter" placeholder="Filter..." class="w-32 bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs rounded-sm focus:outline-none focus:border-cyan-500 transition">
+                        <input type="search" id="proc-filter" placeholder="filter..." class="w-32 bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs rounded-sm focus:outline-none focus:border-cyan-500 transition">
                         <button id="refresh-procs" class="text-zinc-500 hover:text-cyan-400 transition"><i class="ph ph-arrows-clockwise text-lg"></i></button>
                     </div>
                 </div>
@@ -469,49 +468,61 @@ int main(int, char **)
             <div class="col-span-4 flex flex-col border border-zinc-800 p-2 rounded-md">
                 <div class="flex items-center justify-between mb-2 flex-shrink-0">
                     <h2 id="dll-list-header" class="text-sm font-semibold text-zinc-400 flex items-center gap-2"><i class="ph ph-file-code"></i>INJECTION LIST</h2>
-                    <button id="save-changes-btn" class="btn text-xs py-1 px-2 rounded-md"><i class="ph ph-floppy-disk"></i>Save Changes</button>
+                    <button id="save-changes-btn" class="btn text-xs py-1 px-2 rounded-md"><i class="ph ph-floppy-disk"></i>save changes</button>
                 </div>
                 <div id="dll-list" class="flex-grow overflow-y-auto border border-zinc-800 bg-black/50 p-1 font-mono text-sm space-y-1 rounded-sm">
                 </div>
                 <div class="grid grid-cols-2 gap-2 pt-2 flex-shrink-0">
-                    <button id="add-dll-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-plus"></i>Add</button>
-                    <button id="clear-dlls-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-trash"></i>Clear</button>
+                    <button id="add-dll-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-plus"></i>add</button>
+                    <button id="clear-dlls-btn" class="btn text-sm py-1 rounded-md"><i class="ph ph-trash"></i>clear</button>
                 </div>
             </div>
         </div>
-        
+)HTML_PART2";
+
+    html_content += R"HTML_PART3(
         <footer class="flex items-stretch border-t border-zinc-800 flex-shrink-0">
             <div class="w-3/5 p-2 flex flex-col justify-center border-r border-zinc-800">
                 <div class="flex justify-between items-center mb-1">
-                    <label class="text-xs text-zinc-500">Injection Method</label>
+                    <label class="text-xs text-zinc-500">injection method</label>
                     <div class="flex items-center gap-2">
                         <input type="checkbox" id="auto-inject-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
-                        <label for="auto-inject-check" class="text-xs text-zinc-500 select-none">Auto Inject</label>
+                        <label for="auto-inject-check" class="text-xs text-zinc-500 select-none">auto inject</label>
                     </div>
                 </div>
                 <div class="relative w-full" id="custom-select">
                     <button id="select-button" class="w-full bg-zinc-800 border border-zinc-700 p-1 text-sm text-left flex justify-between items-center rounded-sm focus:outline-none focus:border-cyan-500 transition">
-                        <span id="selected-value">LoadLibrary (Standard)</span>
+                        <span id="selected-value" class="text-zinc-300">loadlibrary standard</span>
                         <i class="ph ph-caret-down text-zinc-500"></i>
                     </button>
                     <div id="options-panel" class="absolute bottom-full mb-1 w-full bg-zinc-800 border border-zinc-700 rounded-sm z-10 hidden text-sm">
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="loadlibrary">LoadLibrary (Standard)</div>
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="apc">APC Injection (Stealth)</div>
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="hijack">Thread Hijack (Stealth)</div>
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="blackbone">BlackBone (Manual Map)</div>
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer" data-value="stealth">BlackBone (Driver Stealth)</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="loadlibrary">loadlibrary standard</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="apc">apc injection stealth</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="hijack">thread hijack stealth</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="blackbone">blackbone manual map</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="prommap">pro manual map</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="standard">standard injection</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="pureil">pure il net</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-orange-400 font-medium" data-value="stealth">blackbone driver stealth [kernel]</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-orange-400 font-medium" data-value="kstandard">kernel standard [kernel]</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-orange-400 font-medium" data-value="kmmap">kernel manual map [kernel]</div>
                     </div>
                 </div>
                 <div id="blackbone-options" class="mt-2 space-x-4 hidden">
                     <div class="tooltip inline-flex items-center gap-2">
                         <input type="checkbox" id="erase-pe-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
-                        <label for="erase-pe-check" class="text-xs text-zinc-400 select-none">Erase PE</label>
-                        <span class="tooltiptext">Wipes PE headers from memory to hinder memory analysis.</span>
+                        <label for="erase-pe-check" class="text-xs text-zinc-400 select-none">erase pe</label>
+                        <span class="tooltiptext">wipes pe headers from memory</span>
                     </div>
                     <div class="tooltip inline-flex items-center gap-2">
                         <input type="checkbox" id="hide-module-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
-                        <label for="hide-module-check" class="text-xs text-zinc-400 select-none">Unlinks the module from PEB to hide it from module lists.</span>
+                        <label for="hide-module-check" class="text-xs text-zinc-400 select-none">unlinks the module from peb</span>
                     </div>
+                </div>
+                <div id="il-options" class="mt-2 space-y-2 hidden flex-col w-full px-1">
+                    <input type="text" id="il-version" placeholder="net version eg v4030319" class="w-full bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs rounded-sm focus:outline-none focus:border-cyan-500 text-zinc-300">
+                    <input type="text" id="il-method" placeholder="namespace class method" class="w-full bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs rounded-sm focus:outline-none focus:border-cyan-500 text-zinc-300">
+                    <input type="text" id="il-args" placeholder="arguments" class="w-full bg-zinc-900 border border-zinc-700 px-2 py-1 text-xs rounded-sm focus:outline-none focus:border-cyan-500 text-zinc-300">
                 </div>
             </div>
             <div class="w-2/5 p-2">
@@ -519,20 +530,20 @@ int main(int, char **)
             </div>
         </footer>
     </div>
+)HTML_PART3";
 
+    html_content += R"HTML_PART4(
     <div id="workspace-modal-overlay" class="fixed inset-0 bg-black/50 z-40 hidden items-center justify-center">
         <div id="workspace-modal" class="bg-zinc-900 border border-zinc-700 p-4 rounded-lg shadow-lg w-96">
-            <h3 id="modal-title" class="text-lg font-bold text-white mb-4">Create Workspace</h3>
-            <input type="text" id="workspace-name-input" class="w-full bg-zinc-800 border border-zinc-700 p-2 text-sm rounded-sm focus:outline-none focus:border-cyan-500 transition mb-4" placeholder="Workspace name...">
+            <h3 id="modal-title" class="text-lg font-bold text-white mb-4">create workspace</h3>
+            <input type="text" id="workspace-name-input" class="w-full bg-zinc-800 border border-zinc-700 p-2 text-sm rounded-sm focus:outline-none focus:border-cyan-500 transition mb-4" placeholder="workspace name...">
             <div class="flex justify-end gap-2">
-                <button id="modal-cancel-btn" class="btn text-sm py-1 px-4 rounded-md">Cancel</button>
-                <button id="modal-save-btn" class="btn-primary text-sm py-1 px-4 rounded-md">Save</button>
+                <button id="modal-cancel-btn" class="btn text-sm py-1 px-4 rounded-md">cancel</button>
+                <button id="modal-save-btn" class="btn-primary text-sm py-1 px-4 rounded-md">save</button>
             </div>
         </div>
     </div>
-)HTML_PART1";
-
-    html_content += R"HTML_PART2(
+    
     <script>
         let selectedPid = null;
         let selectedProcName = '';
@@ -568,24 +579,25 @@ int main(int, char **)
             if (type === 'success') colorClass = 'text-green-400';
             if (type === 'error') colorClass = 'text-red-400';
             if (type === 'selection') colorClass = 'text-cyan-400';
+            if (type === 'warning') colorClass = 'text-orange-400';
             p.innerHTML = `> <span class="${colorClass}">${message}</span>`;
             statusLogDiv.appendChild(p);
             statusLogDiv.scrollTop = statusLogDiv.scrollHeight;
         }
         
         async function initializeApp() {
-            logStatus('Welcome to Moon Injector. Ready for action.');
+            logStatus('welcome to moon injector ready for action');
             refreshProcesses();
             await loadWorkspaces();
         }
 
         async function loadWorkspaces() {
-            logStatus('Loading workspaces from database...', 'info');
+            logStatus('loading workspaces from database', 'info');
             const workspacesJson = await window.native_getWorkspaces();
             try {
                 workspaces = JSON.parse(workspacesJson);
             } catch (e) {
-                logStatus('Error loading workspaces.', 'error');
+                logStatus('error loading workspaces', 'error');
                 workspaces = [];
             }
             renderWorkspaces();
@@ -603,7 +615,9 @@ int main(int, char **)
                 dllListHeader.innerHTML = `<i class="ph ph-file-code"></i>INJECTION LIST`;
             }
         }
+)HTML_PART4";
 
+    html_content += R"HTML_PART5(
         function renderWorkspaces() {
             workspaceListDiv.innerHTML = '';
             workspaces.forEach(ws => {
@@ -621,7 +635,7 @@ int main(int, char **)
 
         async function selectWorkspace(id, name) {
             selectedWorkspaceId = id;
-            logStatus(`Selected workspace: ${name}`, 'selection');
+            logStatus(`selected workspace ${name}`, 'selection');
             dllListHeader.innerHTML = `<i class="ph ph-file-code"></i>INJECTION LIST (${name})`;
             renderWorkspaces();
             await loadDllsForWorkspace(id);
@@ -630,7 +644,7 @@ int main(int, char **)
         function openWorkspaceModal(mode, id = null, currentName = '') {
             modalMode = mode;
             renameId = id;
-            modalTitle.textContent = mode === 'add' ? 'Create Workspace' : 'Rename Workspace';
+            modalTitle.textContent = mode === 'add' ? 'create workspace' : 'rename workspace';
             workspaceNameInput.value = currentName;
             workspaceModalOverlay.classList.remove('hidden');
             workspaceModalOverlay.classList.add('flex');
@@ -648,15 +662,15 @@ int main(int, char **)
             if (modalMode === 'add') {
                 const newId = await window.native_addWorkspace(name);
                 if (newId > 0) {
-                    logStatus(`Created workspace: ${name}`, 'success');
+                    logStatus(`created workspace ${name}`, 'success');
                     await loadWorkspaces();
                     await selectWorkspace(newId, name);
                 } else {
-                    logStatus(`Workspace '${name}' already exists.`, 'error');
+                    logStatus(`workspace ${name} already exists`, 'error');
                 }
             } else if (modalMode === 'rename') {
                 await window.native_renameWorkspace(renameId, name);
-                logStatus(`Renamed workspace to '${name}'`, 'success');
+                logStatus(`renamed workspace to ${name}`, 'success');
                 await loadWorkspaces();
             }
             closeWorkspaceModal();
@@ -664,41 +678,41 @@ int main(int, char **)
 
         async function deleteWorkspace() {
             if (!selectedWorkspaceId) {
-                logStatus('No workspace selected to delete.', 'error');
+                logStatus('no workspace selected to delete', 'error');
                 return;
             }
             if (workspaces.length <= 1) {
-                logStatus('Cannot delete the last workspace.', 'error');
+                logStatus('cannot delete the last workspace', 'error');
                 return;
             }
             const currentWs = workspaces.find(w => w.id === selectedWorkspaceId);
-            const confirmed = await window.native_messageBoxYesNo("Confirm Deletion", `Are you sure you want to delete workspace '${currentWs.name}' and all its DLLs?`);
+            const confirmed = await window.native_messageBoxYesNo("confirm deletion", `are you sure you want to delete workspace ${currentWs.name} and all its dlls`);
             if (confirmed) {
                 await window.native_deleteWorkspace(selectedWorkspaceId);
-                logStatus(`Deleted workspace: ${currentWs.name}`, 'success');
+                logStatus(`deleted workspace ${currentWs.name}`, 'success');
                 selectedWorkspaceId = null;
                 await loadWorkspaces();
             }
         }
 
         async function refreshProcesses() {
-            logStatus('Refreshing process list...');
+            logStatus('refreshing process list');
             const procsJson = await window.native_getProcesses();
             let processes = [];
             try {
                 processes = JSON.parse(procsJson);
             } catch (e) {
-                logStatus('Error parsing process list.', 'error');
+                logStatus('error parsing process list', 'error');
             }
             procListDiv.innerHTML = '';
             processes.sort((a,b) => a.name.localeCompare(b.name)).forEach(proc => {
                 const item = document.createElement('div');
                 item.className = 'list-item rounded-sm';
-                item.innerHTML = `<span>${proc.name}</span><span class="text-zinc-500">PID: ${proc.pid} | ${proc.arch}</span>`;
+                item.innerHTML = `<span>${proc.name}</span><span class="text-zinc-500">pid ${proc.pid} | ${proc.arch}</span>`;
                 item.onclick = () => selectProcess(item, proc.pid, proc.name);
                 procListDiv.appendChild(item);
             });
-            logStatus(`Found ${processes.length} processes.`, 'success');
+            logStatus(`found ${processes.length} processes`, 'success');
         }
 
         function selectProcess(element, pid, name) {
@@ -707,9 +721,9 @@ int main(int, char **)
             element.classList.add('selected');
             selectedPid = pid;
             selectedProcName = name;
-            logStatus(`Process selected: ${name} (PID: ${pid})`, 'selection');
+            logStatus(`process selected ${name} pid ${pid}`, 'selection');
             if (autoInjectCheckbox.checked) {
-                logStatus('Auto-inject triggered!', 'selection');
+                logStatus('auto inject triggered', 'selection');
                 doInject();
             }
         }
@@ -726,12 +740,14 @@ int main(int, char **)
                 }
             }
         }
+)HTML_PART5";
 
+    html_content += R"HTML_PART6(
         async function addDll() {
             const path = await window.native_openDllDialog();
             if (path) {
                 addDllToList(path);
-                logStatus('DLL added. Click "Save Changes" to persist.', 'info');
+                logStatus('dll added click save changes to persist', 'info');
             }
         }
 
@@ -749,10 +765,10 @@ int main(int, char **)
             try {
                  savedDlls = JSON.parse(dllsJson);
             } catch(e) {
-                logStatus('Error loading DLL list.', 'error');
+                logStatus('error loading dll list', 'error');
             }
             savedDlls.forEach(path => addDllToList(path));
-            logStatus(`Loaded ${dlls.length} DLLs for workspace.`, 'info');
+            logStatus(`loaded ${dlls.length} dlls for workspace`, 'info');
             renderDlls();
         }
         
@@ -773,7 +789,7 @@ int main(int, char **)
                 dllListDiv.appendChild(item);
             });
             if (dlls.length === 0) {
-                 dllListDiv.innerHTML = '<div class="text-center text-zinc-600 text-xs p-4">No DLLs in this workspace.</div>';
+                 dllListDiv.innerHTML = '<div class="text-center text-zinc-600 text-xs p-4">no dlls in this workspace</div>';
             }
         }
 
@@ -785,7 +801,7 @@ int main(int, char **)
         function removeDll(index) {
             const removed = dlls.splice(index, 1);
             if (removed.length > 0) {
-                logStatus(`Removed ${removed[0].name}. Click "Save Changes".`, 'info');
+                logStatus(`removed ${removed[0].name} click save changes`, 'info');
                 renderDlls();
             }
         }
@@ -793,57 +809,73 @@ int main(int, char **)
         function clearDlls() {
             if (dlls.length === 0) return;
             dlls = [];
-            logStatus('Cleared DLL list. Click "Save Changes".', 'info');
+            logStatus('cleared dll list click save changes', 'info');
             renderDlls();
         }
         
         async function saveChanges() {
             if (!selectedWorkspaceId) {
-                logStatus('Cannot save. No workspace selected.', 'error');
+                logStatus('cannot save no workspace selected', 'error');
                 return;
             }
-            logStatus(`Saving DLL list for workspace...`, 'info');
+            logStatus(`saving dll list for workspace`, 'info');
             const paths = dlls.map(d => d.path);
             const pathsStr = paths.join('_|_');
             await window.native_saveDlls(selectedWorkspaceId, pathsStr);
-            logStatus('Workspace saved successfully.', 'success');
+            logStatus('workspace saved successfully', 'success');
         }
 
         async function doInject() {
             if(!selectedPid) {
-                logStatus('No process selected!', 'error');
+                logStatus('no process selected', 'error');
                 return;
             }
             const dllsToInject = dlls.filter(d => d.selected);
             if(dllsToInject.length === 0) {
-                logStatus('No DLLs selected for injection!', 'error');
+                logStatus('no dlls selected for injection', 'error');
                 return;
             }
             const method = injectMethod;
             const erasePE = erasePECheckbox.checked;
             const hideModule = hideModuleCheckbox.checked;
-            logStatus(`Starting injection into ${selectedProcName} (PID: ${selectedPid})...`);
-            logStatus(`Method: ${selectedValueSpan.textContent}`);
+            const netVer = document.getElementById('il-version').value;
+            const ilMeth = document.getElementById('il-method').value;
+            const ilArgs = document.getElementById('il-args').value;
+            
+            logStatus(`starting injection into ${selectedProcName} pid ${selectedPid}`);
+            logStatus(`method ${selectedValueSpan.textContent}`);
             for (const dll of dllsToInject) {
                 const dllName = dll.name;
-                logStatus(`Injecting ${dllName}...`);
-                const result = await window.native_inject(selectedPid, dll.path, method, erasePE, hideModule);
+                logStatus(`injecting ${dllName}`);
+                const result = await window.native_inject(selectedPid, dll.path, method, erasePE, hideModule, netVer, ilMeth, ilArgs);
                 if (result.toLowerCase().includes('success')) {
-                    logStatus(` > ${dllName}: ${result}`, 'success');
+                    logStatus(`> ${dllName} ${result}`, 'success');
                 } else {
-                    logStatus(` > ${dllName}: ${result}`, 'error');
+                    logStatus(`> ${dllName} ${result}`, 'error');
                 }
             }
         }
+)HTML_PART6";
 
+    html_content += R"HTML_PART7(
         selectButton.onclick = () => optionsPanel.classList.toggle('hidden');
         document.querySelectorAll('.option').forEach(option => {
             option.onclick = () => {
                 injectMethod = option.getAttribute('data-value');
                 selectedValueSpan.textContent = option.textContent;
+                selectedValueSpan.className = option.className.replace('option p-1 hover:bg-zinc-700 cursor-pointer', '').trim();
                 optionsPanel.classList.add('hidden');
-                blackboneOptionsDiv.classList.toggle('hidden', injectMethod !== 'blackbone');
-                blackboneOptionsDiv.classList.toggle('flex', injectMethod === 'blackbone');
+                
+                blackboneOptionsDiv.classList.toggle('hidden', injectMethod !== 'blackbone' && injectMethod !== 'prommap');
+                blackboneOptionsDiv.classList.toggle('flex', injectMethod === 'blackbone' || injectMethod === 'prommap');
+                
+                const ilOptionsDiv = document.getElementById('il-options');
+                ilOptionsDiv.classList.toggle('hidden', injectMethod !== 'pureil');
+                ilOptionsDiv.classList.toggle('flex', injectMethod === 'pureil');
+
+                if (['stealth', 'kstandard', 'kmmap'].includes(injectMethod)) {
+                    logStatus('selected method requires windows test mode and admin rights to load driver', 'warning');
+                }
             };
         });
         document.addEventListener('click', (e) => {
@@ -858,7 +890,7 @@ int main(int, char **)
         document.getElementById('add-workspace-btn').onclick = () => openWorkspaceModal('add');
         document.getElementById('rename-workspace-btn').onclick = () => {
              if (!selectedWorkspaceId) {
-                logStatus('No workspace selected to rename.', 'error');
+                logStatus('no workspace selected to rename', 'error');
                 return;
             }
             const currentWs = workspaces.find(w => w.id === selectedWorkspaceId);
@@ -877,10 +909,12 @@ int main(int, char **)
             if (e.key === 'Escape') closeWorkspaceModal();
         });
 
+        initializeApp();
+
     </script>
 </body>
 </html>
-)HTML_PART2";
+)HTML_PART7";
 
     g_ultralight_controller->LoadHTML(html_content);
 
