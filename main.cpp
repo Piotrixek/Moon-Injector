@@ -321,8 +321,8 @@ int main(int, char **)
                 args.size() > 7 && args[7].IsString() ? ultralight::String(args[7].ToString()).utf8().data() : "";
 
             std::string result = "";
-            if (method == "loadlibrary")
-                result = injector::injectLoadLibrary(pid, dllPath);
+            if (method == "standard")
+                result = injector::standardInjection(pid, dllPath);
             else if (method == "apc")
                 result = injector::injectApc(pid, dllPath);
             else if (method == "hijack")
@@ -333,8 +333,6 @@ int main(int, char **)
                 result = injector::stealthInject(pid, dllPath);
             else if (method == "prommap")
                 result = injector::professionalManualMap(pid, dllPath);
-            else if (method == "standard")
-                result = injector::standardInjection(pid, dllPath);
             else if (method == "pureil")
                 result = injector::pureILInjection(pid, netVersion, dllPath, ilMethod, ilArgs);
             else if (method == "kstandard")
