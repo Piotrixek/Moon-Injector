@@ -201,7 +201,6 @@ std::string injectApc(DWORD pID, const std::string &dllPath)
         return "apc failed could not attach to process status " + std::to_string(status);
 
     int count = 0;
-    std::string errorMsg = "";
 
     auto mod = proc.modules().GetModule(L"kernel32.dll");
     if (!mod)
@@ -318,24 +317,5 @@ std::string injectBlackBone(DWORD pID, const std::string &dllPath, bool erasePE,
     if (!result)
         return "blackbone injection failed status " + std::to_string(result.status);
     return "blackbone injection successful";
-}
-
-std::string stealthInject(DWORD pID, const std::string &dllPath)
-{
-    std::string driver_err = loadDriver();
-    if (!driver_err.empty())
-        return driver_err;
-
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pID)))
-        return "stealth inject failed to attach to process";
-
-    auto flags = blackbone::WipeHeader | blackbone::HideVAD | blackbone::ManualImports;
-    auto result = proc.mmap().MapImage(s2ws(dllPath), flags);
-    proc.Detach();
-
-    if (!result)
-        return "stealth injection failed status " + std::to_string(result.status);
-    return "stealth injection successful";
 }
 } // namespace injector
