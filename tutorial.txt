@@ -1,0 +1,28 @@
+The error code -1073740760, is 0xC0000428 in hexadecimal. This is the Windows error STATUS_INVALID_IMAGE_HASH.
+
+What it means:
+
+This error is caused by a Windows security feature called Driver Signature Enforcement. On all modern 64-bit versions of Windows, the operating system will refuse to load any kernel driver that isn't digitally signed by Microsoft. Since you compiled BlackBoneDrv.sys yourself, it's unsigned, and Windows is correctly blocking it for security reasons.
+
+The Solution: Enable Test Signing Mode
+
+Windows provides a special "Test Mode" for developers that disables this signature check, allowing you to load your own unsigned drivers for testing. This is exactly what you need to do.
+
+Here are the steps:
+
+Click the Start Menu and type cmd.
+
+Right-click on Command Prompt and select "Run as administrator".
+
+In the black command prompt window, type the following command and press Enter:
+
+bcdedit /set testsigning on
+You should see a message saying "The operation completed successfully."
+
+Restart your computer.
+
+After your computer restarts, you will see a small "Test Mode" watermark on the bottom-right corner of your desktop. This is normal and just indicates that Driver Signature Enforcement is disabled.
+
+Now, try running injector again. The driver should load successfully, and manual map/stealth injections should work
+
+(When you're finished and want to turn the watermark off, just run bcdedit /set testsigning off in an admin command prompt and restart again.)
