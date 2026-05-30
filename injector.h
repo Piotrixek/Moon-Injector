@@ -14,7 +14,6 @@ namespace injector
 {
 std::vector<procInfo> getProcs();
 
-std::string injectLoadLibrary(DWORD pID, const std::string &dllPath);
 std::string injectApc(DWORD pID, const std::string &dllPath);
 std::string injectThreadHijack(DWORD pID, const std::string &dllPath);
 std::string injectBlackBone(DWORD pID, const std::string &dllPath, bool erasePE, bool hideModule);
