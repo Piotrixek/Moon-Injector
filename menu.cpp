@@ -6,7 +6,7 @@
 #include <memory>
 #include <Windows.h>
 
-// this links the g_ultralight_controller from main.cpp
+
 extern std::unique_ptr<UltralightController> g_ultralight_controller;
 
 int ImGuiKeyToVK(ImGuiKey key)
@@ -64,18 +64,18 @@ void ShowApp(bool* p_open)
 {
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-	// set the size and position for our main window
-	// max-w-4xl is 56rem -> 896px
+
+
 	ImGui::SetNextWindowSize(ImVec2(896, 560), ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 
-	// make the imgui window itself transparent and match the html's rounded corners
+
 	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-	// begin the main window. it has no title bar but is still movable and not resizable.
+
 	ImGui::Begin("MoonInjector", p_open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
 	ImVec2 content_pos = ImGui::GetCursorScreenPos();
@@ -93,7 +93,7 @@ void ShowApp(bool* p_open)
 		ID3D11ShaderResourceView* texture = g_ultralight_controller->getTextureView();
 		if (texture)
 		{
-			// use AddImageRounded to match the window's rounded corners
+
 			ImGui::GetWindowDrawList()->AddImageRounded(
 				(ImTextureID)reinterpret_cast<uintptr_t>(texture),
 				content_pos,
