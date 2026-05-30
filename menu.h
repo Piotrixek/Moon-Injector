@@ -2,7 +2,7 @@
 
 namespace ImGui
 {
-    bool ToggleButton(const char* str_id, bool* v);
+bool ToggleButton(const char *str_id, bool *v);
 }
 
-void ShowApp(bool* p_open);
+void ShowApp(bool *p_open);

@@ -1,9 +1,10 @@
 #pragma once
+#include <Windows.h>
 #include <string>
 #include <vector>
-#include <Windows.h>
 
-struct procInfo {
+struct procInfo
+{
     DWORD pid;
     std::string name;
     std::string arch;
@@ -11,16 +12,13 @@ struct procInfo {
 
 namespace injector
 {
-    std::vector<procInfo> getProcs();
+std::vector<procInfo> getProcs();
 
-    // --- Standard Injection Methods ---
-    std::string injectLoadLibrary(DWORD pID, const std::string& dllPath);
-    std::string injectApc(DWORD pID, const std::string& dllPath);
-    std::string injectThreadHijack(DWORD pID, const std::string& dllPath);
+std::string injectLoadLibrary(DWORD pID, const std::string &dllPath);
+std::string injectApc(DWORD pID, const std::string &dllPath);
+std::string injectThreadHijack(DWORD pID, const std::string &dllPath);
 
+std::string injectBlackBone(DWORD pID, const std::string &dllPath, bool erasePE, bool hideModule);
 
-    // --- Advanced Injection using BlackBone ---
-    std::string injectBlackBone(DWORD pID, const std::string& dllPath, bool erasePE, bool hideModule);
-
-    std::string stealthInject(DWORD pID, const std::string& dllPath);
-}
+std::string stealthInject(DWORD pID, const std::string &dllPath);
+} // namespace injector

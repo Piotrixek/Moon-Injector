@@ -3,8 +3,8 @@
 
 void ApplyCommandMenuStyle()
 {
-    ImGuiStyle& style = ImGui::GetStyle();
-    ImVec4* colors = style.Colors;
+    ImGuiStyle &style = ImGui::GetStyle();
+    ImVec4 *colors = style.Colors;
 
     style.WindowRounding = 3.0f;
     style.ChildRounding = 3.0f;
@@ -32,12 +32,12 @@ void ApplyCommandMenuStyle()
     colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.20f, 0.22f, 0.23f, 1.00f);
     colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.25f, 0.27f, 0.29f, 1.00f);
     colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.30f, 0.33f, 0.35f, 1.00f);
-    colors[ImGuiCol_CheckMark] = ImVec4(1.00f, 0.84f, 0.00f, 1.00f); 
-    colors[ImGuiCol_SliderGrab] = ImVec4(1.00f, 0.84f, 0.00f, 0.80f); 
-    colors[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.84f, 0.00f, 1.00f); 
-    colors[ImGuiCol_Button] = ImVec4(1.00f, 0.84f, 0.00f, 0.40f); 
-    colors[ImGuiCol_ButtonHovered] = ImVec4(1.00f, 0.84f, 0.00f, 0.60f); 
-    colors[ImGuiCol_ButtonActive] = ImVec4(1.00f, 0.84f, 0.00f, 1.00f); 
+    colors[ImGuiCol_CheckMark] = ImVec4(1.00f, 0.84f, 0.00f, 1.00f);
+    colors[ImGuiCol_SliderGrab] = ImVec4(1.00f, 0.84f, 0.00f, 0.80f);
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.84f, 0.00f, 1.00f);
+    colors[ImGuiCol_Button] = ImVec4(1.00f, 0.84f, 0.00f, 0.40f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(1.00f, 0.84f, 0.00f, 0.60f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(1.00f, 0.84f, 0.00f, 1.00f);
     colors[ImGuiCol_Header] = ImVec4(0.20f, 0.22f, 0.23f, 1.00f);
     colors[ImGuiCol_HeaderHovered] = ImVec4(0.25f, 0.27f, 0.29f, 1.00f);
     colors[ImGuiCol_HeaderActive] = ImVec4(0.30f, 0.33f, 0.35f, 1.00f);

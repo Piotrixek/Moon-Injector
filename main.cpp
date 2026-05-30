@@ -1,54 +1,76 @@
 ﻿#include <Windows.h>
-#include <tchar.h>
-#include <shellapi.h>
 #include <gdiplus.h>
 #include <objidl.h>
+#include <shellapi.h>
+#include <tchar.h>
 
 #include "imgui.h"
-#include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
+#include "imgui_impl_win32.h"
 
 #include "dx_setup.h"
 #include "ui_style.h"
 #include "window_setup.h"
 
+#include "db_handler.h"
 #include "font.h"
 #include "icons.h"
+#include "injector.h"
+#include "menu.h"
+#include "tinyfiledialogs.h"
 #include "ultralight_controller.h"
+#include <filesystem>
+#include <iomanip>
+#include <iostream>
+#include <map>
 #include <memory>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <filesystem>
-#include <sstream>
-#include <iostream>
-#include <stdexcept>
-#include <map>
-#include <iomanip>
-#include "menu.h"
-#include "injector.h"
-#include "tinyfiledialogs.h"
-#include "db_handler.h"
 
 std::unique_ptr<UltralightController> g_ultralight_controller;
 std::unique_ptr<DBHandler> g_db_handler;
 
-std::string escapeJsonString(const std::string& input) {
+std::string escapeJsonString(const std::string &input)
+{
     std::stringstream ss;
-    for (char c : input) {
-        switch (c) {
-        case '\\': ss << "\\\\"; break;
-        case '"':  ss << "\\\""; break;
-        case '/':  ss << "\\/";  break;
-        case '\b': ss << "\\b";  break;
-        case '\f': ss << "\\f";  break;
-        case '\n': ss << "\\n";  break;
-        case '\r': ss << "\\r";  break;
-        case '\t': ss << "\\t";  break;
+    for (char c : input)
+    {
+        switch (c)
+        {
+        case '\\':
+            ss << "\\\\";
+            break;
+        case '"':
+            ss << "\\\"";
+            break;
+        case '/':
+            ss << "\\/";
+            break;
+        case '\b':
+            ss << "\\b";
+            break;
+        case '\f':
+            ss << "\\f";
+            break;
+        case '\n':
+            ss << "\\n";
+            break;
+        case '\r':
+            ss << "\\r";
+            break;
+        case '\t':
+            ss << "\\t";
+            break;
         default:
-            if (c >= 0 && c < 32) {
-                ss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(static_cast<unsigned char>(c));
+            if (c >= 0 && c < 32)
+            {
+                ss << "\\u" << std::hex << std::setw(4) << std::setfill('0')
+                   << static_cast<int>(static_cast<unsigned char>(c));
             }
-            else {
+            else
+            {
                 ss << c;
             }
             break;
@@ -57,25 +79,27 @@ std::string escapeJsonString(const std::string& input) {
     return ss.str();
 }
 
-
-int main(int, char**)
+int main(int, char **)
 {
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
     std::filesystem::path dbFilePath = std::filesystem::path(exePath).parent_path() / "dll_list.db";
 
-    try {
+    try
+    {
         g_db_handler = std::make_unique<DBHandler>(dbFilePath.string());
     }
-    catch (const std::exception& e) {
+    catch (const std::exception &e)
+    {
         MessageBoxA(NULL, e.what(), "Database Error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
     HINSTANCE hInstance = GetModuleHandle(NULL);
-    const TCHAR* className = _T("ImGuiAppClass");
+    const TCHAR *className = _T("ImGuiAppClass");
     HWND hwnd = SetupWindow(hInstance, className);
-    if (!hwnd) {
+    if (!hwnd)
+    {
         return 1;
     }
 
@@ -89,7 +113,8 @@ int main(int, char**)
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO &io = ImGui::GetIO();
+    (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
@@ -99,9 +124,9 @@ int main(int, char**)
 
     ImFontConfig main_font_config;
     main_font_config.FontDataOwnedByAtlas = false;
-    io.Fonts->AddFontFromMemoryTTF((void*)my_Font, sizeof(my_Font), 16.0f, &main_font_config);
+    io.Fonts->AddFontFromMemoryTTF((void *)my_Font, sizeof(my_Font), 16.0f, &main_font_config);
 
-    static const ImWchar icons_ranges[] = { 0xf000, 0xf3ff, 0 };
+    static const ImWchar icons_ranges[] = {0xf000, 0xf3ff, 0};
     ImFontConfig icons_config;
     icons_config.MergeMode = true;
     icons_config.PixelSnapH = true;
@@ -112,7 +137,7 @@ int main(int, char**)
 
     ApplyCommandMenuStyle();
 
-    ImGuiStyle& style = ImGui::GetStyle();
+    ImGuiStyle &style = ImGui::GetStyle();
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
     {
         style.WindowRounding = 0.0f;
@@ -122,10 +147,12 @@ int main(int, char**)
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(GetDevice(), GetImmediateContext());
 
-    try {
+    try
+    {
         g_ultralight_controller = std::make_unique<UltralightController>(GetDevice(), GetImmediateContext());
     }
-    catch (const std::exception& e) {
+    catch (const std::exception &e)
+    {
         std::string error_msg = "An exception occurred during Ultralight initialization:\n\n";
         error_msg += e.what();
         error_msg += "\n\nThis usually means the 'resources' folder is missing from the executable's directory.";
@@ -133,94 +160,104 @@ int main(int, char**)
         return 1;
     }
 
-    g_ultralight_controller->AddCallback("native_getWorkspaces",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
+    g_ultralight_controller->AddCallback(
+        "native_getWorkspaces", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                         const ultralight::JSArgs &args) -> ultralight::JSValue {
             auto workspaces = g_db_handler->getWorkspaces();
             std::stringstream ss;
             ss << "[";
-            for (size_t i = 0; i < workspaces.size(); ++i) {
-                ss << "{\"id\":" << workspaces[i].id << ", \"name\":\"" << escapeJsonString(workspaces[i].name) << "\"}";
-                if (i < workspaces.size() - 1) ss << ",";
+            for (size_t i = 0; i < workspaces.size(); ++i)
+            {
+                ss << "{\"id\":" << workspaces[i].id << ", \"name\":\"" << escapeJsonString(workspaces[i].name)
+                   << "\"}";
+                if (i < workspaces.size() - 1)
+                    ss << ",";
             }
             ss << "]";
             return ultralight::JSValue(ss.str().c_str());
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_addWorkspace",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
-            if (args.size() == 1 && args[0].IsString()) {
+    g_ultralight_controller->AddCallback(
+        "native_addWorkspace", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                        const ultralight::JSArgs &args) -> ultralight::JSValue {
+            if (args.size() == 1 && args[0].IsString())
+            {
                 std::string name = ultralight::String(args[0].ToString()).utf8().data();
                 long long newId = g_db_handler->addWorkspace(name);
                 return ultralight::JSValue(newId);
             }
             return ultralight::JSValue(0);
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_renameWorkspace",
-        JSCallbackFunc([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
-            if (args.size() == 2 && args[0].IsNumber() && args[1].IsString()) {
+    g_ultralight_controller->AddCallback(
+        "native_renameWorkspace", JSCallbackFunc([](const ultralight::JSObject &obj, const ultralight::JSArgs &args) {
+            if (args.size() == 2 && args[0].IsNumber() && args[1].IsString())
+            {
                 int id = (int)args[0].ToNumber();
                 std::string name = ultralight::String(args[1].ToString()).utf8().data();
                 g_db_handler->renameWorkspace(id, name);
             }
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_deleteWorkspace",
-        JSCallbackFunc([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
-            if (args.size() == 1 && args[0].IsNumber()) {
+    g_ultralight_controller->AddCallback(
+        "native_deleteWorkspace", JSCallbackFunc([](const ultralight::JSObject &obj, const ultralight::JSArgs &args) {
+            if (args.size() == 1 && args[0].IsNumber())
+            {
                 int id = (int)args[0].ToNumber();
                 g_db_handler->deleteWorkspace(id);
             }
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_messageBoxYesNo",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
-            if (args.size() == 2 && args[0].IsString() && args[1].IsString()) {
+    g_ultralight_controller->AddCallback(
+        "native_messageBoxYesNo", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                           const ultralight::JSArgs &args) -> ultralight::JSValue {
+            if (args.size() == 2 && args[0].IsString() && args[1].IsString())
+            {
                 std::string title = ultralight::String(args[0].ToString()).utf8().data();
                 std::string message = ultralight::String(args[1].ToString()).utf8().data();
                 int result = tinyfd_messageBox(title.c_str(), message.c_str(), "yesno", "question", 1);
                 return ultralight::JSValue(result == 1);
             }
             return ultralight::JSValue(false);
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_getDlls",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
-            if (args.size() == 1 && args[0].IsNumber()) {
+    g_ultralight_controller->AddCallback(
+        "native_getDlls", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                   const ultralight::JSArgs &args) -> ultralight::JSValue {
+            if (args.size() == 1 && args[0].IsNumber())
+            {
                 int workspaceId = (int)args[0].ToNumber();
                 auto dlls = g_db_handler->getDlls(workspaceId);
                 std::stringstream ss;
                 ss << "[";
-                for (size_t i = 0; i < dlls.size(); ++i) {
+                for (size_t i = 0; i < dlls.size(); ++i)
+                {
                     ss << "\"" << escapeJsonString(dlls[i].path) << "\"";
-                    if (i < dlls.size() - 1) ss << ",";
+                    if (i < dlls.size() - 1)
+                        ss << ",";
                 }
                 ss << "]";
                 return ultralight::JSValue(ss.str().c_str());
             }
             return ultralight::JSValue("[]");
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_openDllDialog",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
-            const char* filterPatterns[1] = { "*.dll" };
-            const char* filePath = tinyfd_openFileDialog("Select DLL", "", 1, filterPatterns, "DLL Files", 0);
-            if (filePath) {
+    g_ultralight_controller->AddCallback(
+        "native_openDllDialog", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                         const ultralight::JSArgs &args) -> ultralight::JSValue {
+            const char *filterPatterns[1] = {"*.dll"};
+            const char *filePath = tinyfd_openFileDialog("Select DLL", "", 1, filterPatterns, "DLL Files", 0);
+            if (filePath)
+            {
                 return ultralight::JSValue(filePath);
             }
             return ultralight::JSValue();
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_saveDlls",
-        JSCallbackFunc([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
-            if (args.size() == 2 && args[0].IsNumber() && args[1].IsString()) {
+    g_ultralight_controller->AddCallback(
+        "native_saveDlls", JSCallbackFunc([](const ultralight::JSObject &obj, const ultralight::JSArgs &args) {
+            if (args.size() == 2 && args[0].IsNumber() && args[1].IsString())
+            {
                 int workspaceId = (int)args[0].ToNumber();
                 std::string pathsStr = ultralight::String(args[1].ToString()).utf8().data();
 
@@ -229,45 +266,52 @@ int main(int, char**)
                 size_t pos = 0;
                 std::string token;
                 std::string s = pathsStr;
-                while ((pos = s.find(delimiter)) != std::string::npos) {
+                while ((pos = s.find(delimiter)) != std::string::npos)
+                {
                     token = s.substr(0, pos);
-                    if (!token.empty()) {
+                    if (!token.empty())
+                    {
                         paths.push_back(token);
                     }
                     s.erase(0, pos + delimiter.length());
                 }
-                if (!s.empty()) {
+                if (!s.empty())
+                {
                     paths.push_back(s);
                 }
 
                 g_db_handler->syncDlls(workspaceId, paths);
             }
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_getProcesses",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
+    g_ultralight_controller->AddCallback(
+        "native_getProcesses", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                        const ultralight::JSArgs &args) -> ultralight::JSValue {
             auto procs = injector::getProcs();
             std::stringstream ss;
             ss << "[";
-            for (size_t i = 0; i < procs.size(); ++i) {
-                ss << "{\"pid\":" << procs[i].pid << ", \"name\":\"" << escapeJsonString(procs[i].name) << "\", \"arch\":\"" << escapeJsonString(procs[i].arch) << "\"}";
-                if (i < procs.size() - 1) ss << ",";
+            for (size_t i = 0; i < procs.size(); ++i)
+            {
+                ss << "{\"pid\":" << procs[i].pid << ", \"name\":\"" << escapeJsonString(procs[i].name)
+                   << "\", \"arch\":\"" << escapeJsonString(procs[i].arch) << "\"}";
+                if (i < procs.size() - 1)
+                    ss << ",";
             }
             ss << "]";
             return ultralight::JSValue(ss.str().c_str());
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_quit",
-        JSCallbackFunc([hwnd](const ultralight::JSObject& obj, const ultralight::JSArgs& args) {
+    g_ultralight_controller->AddCallback(
+        "native_quit", JSCallbackFunc([hwnd](const ultralight::JSObject &obj, const ultralight::JSArgs &args) {
             PostMessage(hwnd, WM_QUIT, 0, 0);
-            })
-    );
+        }));
 
-    g_ultralight_controller->AddCallback("native_inject",
-        JSCallbackFuncWithRet([](const ultralight::JSObject& obj, const ultralight::JSArgs& args) -> ultralight::JSValue {
-            if (args.size() != 5 || !args[0].IsNumber() || !args[1].IsString() || !args[2].IsString() || !args[3].IsBoolean() || !args[4].IsBoolean()) {
+    g_ultralight_controller->AddCallback(
+        "native_inject", JSCallbackFuncWithRet([](const ultralight::JSObject &obj,
+                                                  const ultralight::JSArgs &args) -> ultralight::JSValue {
+            if (args.size() != 5 || !args[0].IsNumber() || !args[1].IsString() || !args[2].IsString() ||
+                !args[3].IsBoolean() || !args[4].IsBoolean())
+            {
                 return ultralight::JSValue("Invalid arguments for injection.");
             }
 
@@ -278,31 +322,40 @@ int main(int, char**)
             bool hideModule = args[4].ToBoolean();
 
             std::string result = "";
-            if (method == "loadlibrary") {
+            if (method == "loadlibrary")
+            {
                 result = injector::injectLoadLibrary(pid, dllPath);
             }
-            else if (method == "apc") {
+            else if (method == "apc")
+            {
                 result = injector::injectApc(pid, dllPath);
             }
-            else if (method == "hijack") {
+            else if (method == "hijack")
+            {
                 result = injector::injectThreadHijack(pid, dllPath);
             }
-            else if (method == "blackbone") {
+            else if (method == "blackbone")
+            {
                 result = injector::injectBlackBone(pid, dllPath, erasePE, hideModule);
             }
-            else if (method == "stealth") {
+            else if (method == "stealth")
+            {
                 result = injector::stealthInject(pid, dllPath);
             }
-            else {
+            else
+            {
                 result = "Unknown injection method specified.";
             }
 
             return ultralight::JSValue(result.c_str());
-            })
-    );
+        }));
 
-    if (!g_ultralight_controller->IsRendererValid()) {
-        MessageBox(NULL, _T("Failed to initialize Ultralight Renderer!\n\nMake sure the 'resources' and '.dll' files from the SDK are in the same directory as your .exe."), _T("Ultralight Error"), MB_OK | MB_ICONERROR);
+    if (!g_ultralight_controller->IsRendererValid())
+    {
+        MessageBox(NULL,
+                   _T("Failed to initialize Ultralight Renderer!\n\nMake sure the 'resources' and '.dll' files from ")
+                   _T("the SDK are in the same directory as your .exe."),
+                   _T("Ultralight Error"), MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -829,7 +882,6 @@ int main(int, char**)
 </html>
 )HTML_PART2";
 
-
     g_ultralight_controller->LoadHTML(html_content);
 
     bool done = false;
@@ -853,17 +905,19 @@ int main(int, char**)
 
         ShowApp(&show_app);
 
-        const float clear_color_with_alpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        ID3D11RenderTargetView* mainRenderTargetView = GetMainRenderTargetView();
-        ID3D11DeviceContext* context = GetImmediateContext();
+        const float clear_color_with_alpha[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        ID3D11RenderTargetView *mainRenderTargetView = GetMainRenderTargetView();
+        ID3D11DeviceContext *context = GetImmediateContext();
 
-        if (mainRenderTargetView && context) {
+        if (mainRenderTargetView && context)
+        {
             context->OMSetRenderTargets(1, &mainRenderTargetView, NULL);
             context->ClearRenderTargetView(mainRenderTargetView, clear_color_with_alpha);
         }
 
         ImGui::Render();
-        if (ImGui::GetDrawData()) {
+        if (ImGui::GetDrawData())
+        {
             ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         }
 
@@ -873,8 +927,9 @@ int main(int, char**)
             ImGui::RenderPlatformWindowsDefault();
         }
 
-        IDXGISwapChain* swapChain = GetSwapChain();
-        if (swapChain) {
+        IDXGISwapChain *swapChain = GetSwapChain();
+        if (swapChain)
+        {
             swapChain->Present(1, 0);
         }
     }
