@@ -193,20 +193,6 @@ std::vector<procInfo> getProcs()
     return procs;
 }
 
-std::string injectLoadLibrary(DWORD pID, const std::string &dllPath)
-{
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pID)))
-        return "loadlibrary failed could not attach to process";
-
-    auto result = proc.modules().Inject(s2ws(dllPath));
-    if (!result)
-        return "loadlibrary injection failed status " + std::to_string(result.status);
-
-    proc.Detach();
-    return "loadlibrary injection successful";
-}
-
 std::string injectApc(DWORD pID, const std::string &dllPath)
 {
     blackbone::Process proc;
