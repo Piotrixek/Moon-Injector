@@ -1,4 +1,4 @@
-﻿#include <Windows.h>
+#include <Windows.h>
 #include <gdiplus.h>
 #include <objidl.h>
 #include <shellapi.h>
@@ -329,8 +329,6 @@ int main(int, char **)
                 result = injector::injectThreadHijack(pid, dllPath);
             else if (method == "blackbone")
                 result = injector::injectBlackBone(pid, dllPath, erasePE, hideModule);
-            else if (method == "stealth")
-                result = injector::stealthInject(pid, dllPath);
             else if (method == "prommap")
                 result = injector::professionalManualMap(pid, dllPath);
             else if (method == "pureil")
@@ -490,18 +488,16 @@ int main(int, char **)
                 </div>
                 <div class="relative w-full" id="custom-select">
                     <button id="select-button" class="w-full bg-zinc-800 border border-zinc-700 p-1 text-sm text-left flex justify-between items-center rounded-sm focus:outline-none focus:border-cyan-500 transition">
-                        <span id="selected-value" class="text-zinc-300">loadlibrary standard</span>
+                        <span id="selected-value" class="text-zinc-300">standard injection</span>
                         <i class="ph ph-caret-down text-zinc-500"></i>
                     </button>
                     <div id="options-panel" class="absolute bottom-full mb-1 w-full bg-zinc-800 border border-zinc-700 rounded-sm z-10 hidden text-sm">
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="loadlibrary">loadlibrary standard</div>
+                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="standard">standard injection</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="apc">apc injection stealth</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="hijack">thread hijack stealth</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="blackbone">blackbone manual map</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="prommap">pro manual map</div>
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="standard">standard injection</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-zinc-300" data-value="pureil">pure il net</div>
-                        <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-orange-400 font-medium" data-value="stealth">blackbone driver stealth [kernel]</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-orange-400 font-medium" data-value="kstandard">kernel standard [kernel]</div>
                         <div class="option p-1 hover:bg-zinc-700 cursor-pointer text-orange-400 font-medium" data-value="kmmap">kernel manual map [kernel]</div>
                     </div>
@@ -514,7 +510,7 @@ int main(int, char **)
                     </div>
                     <div class="tooltip inline-flex items-center gap-2">
                         <input type="checkbox" id="hide-module-check" class="bg-zinc-900 border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0">
-                        <label for="hide-module-check" class="text-xs text-zinc-400 select-none">unlinks the module from peb</span>
+                        <label for="hide-module-check" class="text-xs text-zinc-400 select-none">unlinks the module from peb</label>
                     </div>
                 </div>
                 <div id="il-options" class="mt-2 space-y-2 hidden flex-col w-full px-1">
@@ -548,7 +544,7 @@ int main(int, char **)
         let dlls = [];
         let workspaces = [];
         let selectedWorkspaceId = null;
-        let injectMethod = 'loadlibrary';
+        let injectMethod = 'standard';
 
         const procListDiv = document.getElementById('proc-list');
         const dllListDiv = document.getElementById('dll-list');
@@ -871,7 +867,7 @@ int main(int, char **)
                 ilOptionsDiv.classList.toggle('hidden', injectMethod !== 'pureil');
                 ilOptionsDiv.classList.toggle('flex', injectMethod === 'pureil');
 
-                if (['stealth', 'kstandard', 'kmmap'].includes(injectMethod)) {
+                if (['kstandard', 'kmmap'].includes(injectMethod)) {
                     logStatus('selected method requires windows test mode and admin rights to load driver', 'warning');
                 }
             };
