@@ -15,10 +15,10 @@
 #include "BlackBone/Asm/AsmFactory.h"
 
 
-// Link against the Blackbone library
+
 #pragma comment(lib, "BlackBone.lib")
 
-// --- Helper function to convert string to wstring ---
+
 static std::wstring s2ws(const std::string& s) {
     int len;
     int slength = (int)s.length() + 1;
@@ -30,7 +30,7 @@ static std::wstring s2ws(const std::string& s) {
     return r;
 }
 
-// --- Helper function to convert wstring to string ---
+
 static std::string ws2s(const std::wstring& w_str) {
     if (w_str.empty()) return std::string();
     int size_needed = WideCharToMultiByte(CP_ACP, 0, &w_str[0], (int)w_str.size(), NULL, 0, NULL, NULL);
@@ -42,20 +42,20 @@ static std::string ws2s(const std::wstring& w_str) {
 
 namespace injector
 {
-    // Helper function to load the BlackBone driver
-    // Returns an empty string on success, or an error message on failure.
+
+
     static std::string loadDriver() {
-        // The driver file (e.g., BlackBoneDrv10.sys) should be in the same directory as the executable
+
         NTSTATUS status = blackbone::Driver().EnsureLoaded();
         if (NT_SUCCESS(status)) {
-            return ""; // Success
+            return "";
         }
 
-        // Provide a more descriptive error message
+
         switch (status) {
-        case 0xC0000034: // STATUS_OBJECT_NAME_NOT_FOUND
+        case 0xC0000034:
             return "driver load failed: .sys file not found. make sure it's next to the exe.";
-        case 0xC0000022: // STATUS_ACCESS_DENIED
+        case 0xC0000022:
             return "driver load failed: access denied. please run the injector as an administrator.";
         default:
             return "driver load failed with unknown error code: " + std::to_string(status);
@@ -100,7 +100,7 @@ namespace injector
             return "loadlibrary failed: could not attach to process.";
         }
 
-        // Use BlackBone's implementation for consistency
+
         auto result = proc.modules().Inject(s2ws(dllPath));
         if (!result) {
             return "loadlibrary injection failed. status: " + std::to_string(result.status);
@@ -121,9 +121,9 @@ namespace injector
         int count = 0;
         std::string errorMsg = "";
 
-        // Create a new scope to ensure MemBlock is destructed before proc.Detach()
+
         {
-            // Get kernel32.dll and the functions we need
+
             auto mod = proc.modules().GetModule(L"kernel32.dll");
             if (!mod) {
                 errorMsg = "apc failed: could not find kernel32.dll.";
@@ -135,7 +135,7 @@ namespace injector
                 goto end_apc;
             }
 
-            // Allocate memory for the DLL path in the target process
+
             std::wstring dllPathW = s2ws(dllPath);
             auto mem = proc.memory().Allocate((dllPathW.length() + 1) * sizeof(wchar_t), PAGE_READWRITE);
             if (!mem) {
@@ -143,28 +143,28 @@ namespace injector
                 goto end_apc;
             }
 
-            // Write the DLL path into the allocated memory
+
             status = mem.result().Write(0, (dllPathW.length() + 1) * sizeof(wchar_t), dllPathW.c_str());
             if (!NT_SUCCESS(status)) {
                 errorMsg = "apc failed: could not write dll path to memory. status: " + std::to_string(status);
                 goto end_apc;
             }
 
-            // Get all threads in the process
+
             auto threads = proc.threads().getAll();
             if (threads.empty()) {
                 errorMsg = "apc failed: could not enumerate threads.";
                 goto end_apc;
             }
 
-            // Queue the APC to each valid thread
+
             for (auto& pThread : threads) {
                 if (pThread && pThread->valid()) {
                     proc.core().native()->QueueApcT(pThread->handle(), pLoadLibraryW->procAddress, mem.result().ptr());
                     count++;
                 }
             }
-        } // mem's destructor is called here, freeing the memory while proc is still attached
+        }
 
     end_apc:
         proc.Detach();
@@ -188,7 +188,7 @@ namespace injector
             return "hijack failed: could not attach to process.";
         }
 
-        // Find LoadLibraryW
+
         auto mod = proc.modules().GetModule(L"kernel32.dll");
         if (!mod) {
             proc.Detach();
@@ -200,23 +200,23 @@ namespace injector
             return "hijack failed: could not find LoadLibraryW export.";
         }
 
-        // Create the remote function object
+
         blackbone::RemoteFunction<decltype(&LoadLibraryW)> remoteLoadLibrary(proc, pLoadLibraryW->procAddress);
 
-        // Get a random thread to hijack for the call
+
         auto pThread = proc.threads().getRandom();
         if (!pThread || !pThread->valid()) {
             proc.Detach();
             return "hijack failed: could not find a valid thread to hijack.";
         }
 
-        // Call LoadLibraryW in the context of the hijacked thread
+
         auto result = remoteLoadLibrary.Call({ s2ws(dllPath).c_str() }, pThread);
 
         proc.Detach();
 
         if (result.success()) {
-            // Check if LoadLibraryW returned a valid module handle (non-zero)
+
             if (result.result() != 0) {
                 return "thread hijack successful!";
             }
