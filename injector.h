@@ -17,7 +17,6 @@ std::vector<procInfo> getProcs();
 std::string injectApc(DWORD pID, const std::string &dllPath);
 std::string injectThreadHijack(DWORD pID, const std::string &dllPath);
 std::string injectBlackBone(DWORD pID, const std::string &dllPath, bool erasePE, bool hideModule);
-std::string stealthInject(DWORD pID, const std::string &dllPath);
 
 std::string professionalManualMap(DWORD pid, const std::string &dllPath);
 std::string standardInjection(DWORD pid, const std::string &dllPath);
