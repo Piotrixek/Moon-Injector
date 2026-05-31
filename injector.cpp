@@ -97,15 +97,13 @@ std::string professionalManualMap(DWORD pid, const std::string &dllPath)
     if (!NT_SUCCESS(status))
         return "failed to attach to process id " + std::to_string(pid);
 
-    blackbone::eLoadFlags flags =
-        static_cast<blackbone::eLoadFlags>(blackbone::eLoadFlags::ManualImports | blackbone::eLoadFlags::WipeHeader |
-                                           blackbone::eLoadFlags::HideVAD | blackbone::eLoadFlags::CreateLdrRef);
+    blackbone::eLoadFlags flags = static_cast<blackbone::eLoadFlags>(blackbone::WipeHeader | blackbone::HideVAD);
 
     auto result = proc.mmap().MapImage(s2ws(dllPath), flags);
     if (!NT_SUCCESS(result.status))
         return "manual mapping failed status " + std::to_string(result.status);
 
-    return "successfully mapped the image";
+    return "";
 }
 
 std::string standardInjection(DWORD pid, const std::string &dllPath)
@@ -196,103 +194,133 @@ std::vector<procInfo> getProcs()
 std::string injectApc(DWORD pID, const std::string &dllPath)
 {
     blackbone::Process proc;
-    NTSTATUS status = proc.Attach(pID);
-    if (!NT_SUCCESS(status))
-        return "apc failed could not attach to process status " + std::to_string(status);
-
-    int count = 0;
-
-    auto mod = proc.modules().GetModule(L"kernel32.dll");
-    if (!mod)
+    if (!NT_SUCCESS(proc.Attach(pID)))
     {
-        proc.Detach();
-        return "apc failed could not find kernel32";
+        return "Failed to attach to process.";
     }
 
-    auto pLoadLibraryW = proc.modules().GetExport(mod, "LoadLibraryW");
-    if (!pLoadLibraryW)
+    std::wstring wDllPath = s2ws(dllPath);
+
+    auto expData = proc.modules().GetExport(L"kernel32.dll", "LoadLibraryW");
+    if (!NT_SUCCESS(expData.status))
     {
-        proc.Detach();
-        return "apc failed could not find loadlibraryw export";
+        return "Failed to find LoadLibraryW.";
     }
 
-    std::wstring dllPathW = s2ws(dllPath);
-    auto mem = proc.memory().Allocate((dllPathW.length() + 1) * sizeof(wchar_t), PAGE_READWRITE);
-    if (!mem)
+    size_t pathSize = (wDllPath.length() + 1) * sizeof(wchar_t);
+    auto memData = proc.memory().Allocate(pathSize, PAGE_READWRITE, 0, false);
+
+    if (!NT_SUCCESS(memData.status))
     {
-        proc.Detach();
-        return "apc failed could not allocate memory for dll path";
+        return "Memory allocation failed.";
     }
 
-    status = mem.result().Write(0, (dllPathW.length() + 1) * sizeof(wchar_t), dllPathW.c_str());
-    if (!NT_SUCCESS(status))
-    {
-        proc.Detach();
-        return "apc failed could not write dll path to memory status " + std::to_string(status);
-    }
+    memData->Write(0, pathSize, wDllPath.c_str());
 
     auto threads = proc.threads().getAll();
     if (threads.empty())
     {
-        proc.Detach();
-        return "apc failed could not enumerate threads";
+        return "Process has no active threads.";
     }
 
-    for (auto &pThread : threads)
+    int queuedAPCs = 0;
+
+    for (auto &thd : threads)
     {
-        if (pThread && pThread->valid())
+
+        if (thd->Suspended())
+            continue;
+
+        NTSTATUS status = proc.core().native()->QueueApcT(thd->handle(), expData->procAddress, memData->ptr());
+
+        if (NT_SUCCESS(status))
         {
-            proc.core().native()->QueueApcT(pThread->handle(), pLoadLibraryW->procAddress, mem.result().ptr());
-            count++;
+            queuedAPCs++;
         }
     }
 
-    proc.Detach();
+    if (queuedAPCs == 0)
+    {
+        return "Failed to queue APCs: No suitable active threads found.";
+    }
 
-    if (count > 0)
-        return "apc successful queued to " + std::to_string(count) + " threads";
-    return "apc failed no valid threads found to queue to";
+    bool successfullyLoaded = false;
+
+    for (int i = 0; i < 20; i++)
+    {
+        Sleep(50);
+
+        if (proc.modules().GetModule(wDllPath) != nullptr)
+        {
+            successfullyLoaded = true;
+            break;
+        }
+    }
+
+    if (!successfullyLoaded)
+    {
+        return "APCs queued, but DLL did not load within timeout. Threads may not be in an alertable wait state.";
+    }
+
+    return "";
 }
 
 std::string injectThreadHijack(DWORD pID, const std::string &dllPath)
 {
     blackbone::Process proc;
-    NTSTATUS status = proc.Attach(pID);
-    if (!NT_SUCCESS(status))
-        return "hijack failed could not attach to process";
+    if (!NT_SUCCESS(proc.Attach(pID)))
+        return "failed to attach to process";
 
-    auto mod = proc.modules().GetModule(L"kernel32.dll");
-    if (!mod)
+    std::wstring wDllPath = s2ws(dllPath);
+    blackbone::ThreadPtr targetThread = nullptr;
+
+    auto threads = proc.threads().getAll();
+    auto mainThread = proc.threads().getMain();
+
+    uint64_t maxExecTime = 0;
+
+    for (auto &thd : threads)
     {
-        proc.Detach();
-        return "hijack failed could not find kernel32";
+
+        if (mainThread && thd->id() == mainThread->id())
+            continue;
+
+        if (thd->Suspended())
+            continue;
+
+        uint64_t currentExecTime = thd->execTime();
+
+        if (currentExecTime >= maxExecTime)
+        {
+            maxExecTime = currentExecTime;
+            targetThread = thd;
+        }
     }
-    auto pLoadLibraryW = proc.modules().GetExport(mod, "LoadLibraryW");
-    if (!pLoadLibraryW)
+
+    if (!targetThread)
+        targetThread = mainThread;
+
+    if (!targetThread)
+        return "failed to locate a suitable thread to hijack";
+
+    try
     {
-        proc.Detach();
-        return "hijack failed could not find loadlibraryw export";
+
+        auto result = proc.modules().Inject(wDllPath, targetThread);
+
+        if (!NT_SUCCESS(result.status))
+            return "hijack injection failed status " + std::to_string(result.status);
     }
-
-    blackbone::RemoteFunction<decltype(&LoadLibraryW)> remoteLoadLibrary(proc, pLoadLibraryW->procAddress);
-
-    auto pThread = proc.threads().getRandom();
-    if (!pThread || !pThread->valid())
+    catch (const std::exception &e)
     {
-        proc.Detach();
-        return "hijack failed could not find a valid thread to hijack";
+        return std::string("injector crashed with exception: ") + e.what();
     }
-
-    auto result = remoteLoadLibrary.Call({s2ws(dllPath).c_str()}, pThread);
-    proc.Detach();
-
-    if (result.success())
+    catch (...)
     {
-        if (result.result() != 0)
-            return "thread hijack successful";
-        return "hijack failed loadlibrary returned null";
+        return "injector crashed with unknown memory exception";
     }
-    return "hijack failed remote call failed status " + std::to_string(result.status);
+
+    return "";
 }
 
 std::string injectBlackBone(DWORD pID, const std::string &dllPath, bool erasePE, bool hideModule)
