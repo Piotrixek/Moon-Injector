@@ -20,50 +20,58 @@
 
 #pragma comment(lib, "BlackBone.lib")
 
-static std::wstring s2ws(const std::string &s)
+static std::wstring convertStringToWideString(const std::string &sourceString)
 {
-    if (s.empty())
+    if (sourceString.empty())
+    {
         return std::wstring();
-    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &s[0], (int)s.size(), NULL, 0);
-    std::wstring wstrTo(size_needed, 0);
-    MultiByteToWideChar(CP_UTF8, 0, &s[0], (int)s.size(), &wstrTo[0], size_needed);
-    return wstrTo;
+    }
+    int requiredSize = MultiByteToWideChar(CP_UTF8, 0, &sourceString[0], static_cast<int>(sourceString.size()), NULL, 0);
+    std::wstring wideStringDestination(requiredSize, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &sourceString[0], static_cast<int>(sourceString.size()), &wideStringDestination[0], requiredSize);
+    return wideStringDestination;
 }
 
-static std::string ws2s(const std::wstring &w_str)
+static std::string convertWideStringToString(const std::wstring &sourceWideString)
 {
-    if (w_str.empty())
+    if (sourceWideString.empty())
+    {
         return std::string();
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &w_str[0], (int)w_str.size(), NULL, 0, NULL, NULL);
-    std::string str_to(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, &w_str[0], (int)w_str.size(), &str_to[0], size_needed, NULL, NULL);
-    return str_to;
+    }
+    int requiredSize = WideCharToMultiByte(CP_UTF8, 0, &sourceWideString[0], static_cast<int>(sourceWideString.size()), NULL, 0, NULL, NULL);
+    std::string stringDestination(requiredSize, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &sourceWideString[0], static_cast<int>(sourceWideString.size()), &stringDestination[0], requiredSize, NULL, NULL);
+    return stringDestination;
 }
 
-static bool isTestModeEnabled()
+static bool isWindowsTestModeEnabled()
 {
-    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-    if (!hNtdll)
+    HMODULE ntdllModuleHandle = GetModuleHandleA("ntdll.dll");
+    if (!ntdllModuleHandle)
+    {
         return false;
+    }
 
-    using NtQuerySystemInfoFn = NTSTATUS(WINAPI *)(ULONG, PVOID, ULONG, PULONG);
-    auto pNtQuery = (NtQuerySystemInfoFn)GetProcAddress(hNtdll, "NtQuerySystemInformation");
-    if (!pNtQuery)
+    using NtQuerySystemInformationFunction = NTSTATUS(WINAPI *)(ULONG, PVOID, ULONG, PULONG);
+    auto ntQuerySystemInformationPointer = reinterpret_cast<NtQuerySystemInformationFunction>(GetProcAddress(ntdllModuleHandle, "NtQuerySystemInformation"));
+    if (!ntQuerySystemInformationPointer)
+    {
         return false;
+    }
 
-    struct
+    struct SystemCodeIntegrityInformationStructure
     {
         ULONG Length;
         ULONG CodeIntegrityOptions;
-    } sci = {0};
+    } systemCodeIntegrityInformation = {0};
 
-    sci.Length = sizeof(sci);
-    ULONG retLen = 0;
+    systemCodeIntegrityInformation.Length = sizeof(systemCodeIntegrityInformation);
+    ULONG returnedLength = 0;
 
-    NTSTATUS status = pNtQuery(103, &sci, sizeof(sci), &retLen);
-    if (status >= 0)
+    NTSTATUS queryStatus = ntQuerySystemInformationPointer(103, &systemCodeIntegrityInformation, sizeof(systemCodeIntegrityInformation), &returnedLength);
+    if (queryStatus >= 0)
     {
-        return (sci.CodeIntegrityOptions & 0x0002) != 0;
+        return (systemCodeIntegrityInformation.CodeIntegrityOptions & 0x0002) != 0;
     }
     return false;
 }
@@ -73,277 +81,325 @@ namespace injector
 
 static std::string loadDriver()
 {
-    if (!isTestModeEnabled())
+    if (!isWindowsTestModeEnabled())
     {
         return "driver load failed windows test mode must be enabled to use kernel methods";
     }
 
     NTSTATUS status = blackbone::Driver().EnsureLoaded();
     if (NT_SUCCESS(status))
+    {
         return "";
+    }
 
     if (status == 0xC0000034)
+    {
         return "driver load failed sys file not found make sure its next to the exe";
+    }
     if (status == 0xC0000022)
+    {
         return "driver load failed access denied please run the injector as an administrator";
+    }
 
     return "driver load failed with unknown error code " + std::to_string(status);
 }
 
-std::string professionalManualMap(DWORD pid, const std::string &dllPath)
+std::string professionalManualMap(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
-    blackbone::Process proc;
-    NTSTATUS status = proc.Attach(pid);
-    if (!NT_SUCCESS(status))
-        return "failed to attach to process id " + std::to_string(pid);
+    blackbone::Process targetProcess;
+    NTSTATUS attachmentStatus = targetProcess.Attach(targetProcessIdentifier);
+    if (!NT_SUCCESS(attachmentStatus))
+    {
+        return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
+    }
 
-    blackbone::eLoadFlags flags = static_cast<blackbone::eLoadFlags>(blackbone::WipeHeader | blackbone::HideVAD);
+    blackbone::eLoadFlags mappingFlags = static_cast<blackbone::eLoadFlags>(blackbone::ManualImports | blackbone::CreateLdrRef | blackbone::WipeHeader);
 
-    auto result = proc.mmap().MapImage(s2ws(dllPath), flags);
-    if (!NT_SUCCESS(result.status))
-        return "manual mapping failed status " + std::to_string(result.status);
+    auto mappingResult = targetProcess.mmap().MapImage(convertStringToWideString(dllPath), mappingFlags);
+    if (!NT_SUCCESS(mappingResult.status))
+    {
+        return "manual mapping failed status " + std::to_string(mappingResult.status);
+    }
 
-    return "";
+    return "manual mapping successful";
 }
 
-std::string standardInjection(DWORD pid, const std::string &dllPath)
+std::string standardInjection(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pid)))
-        return "failed to attach to process id " + std::to_string(pid);
+    blackbone::Process targetProcess;
+    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
+    {
+        return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
+    }
 
-    auto result = proc.modules().Inject(s2ws(dllPath));
-    if (!NT_SUCCESS(result.status))
-        return "standard injection failed status " + std::to_string(result.status);
+    auto injectionResult = targetProcess.modules().Inject(convertStringToWideString(dllPath));
+    if (!NT_SUCCESS(injectionResult.status))
+    {
+        return "standard injection failed status " + std::to_string(injectionResult.status);
+    }
 
     return "standard injection successful";
 }
 
-std::string pureILInjection(DWORD pid, const std::string &netVersion, const std::string &dllPath,
-                            const std::string &methodName, const std::string &args)
+std::string pureILInjection(DWORD targetProcessIdentifier, const std::string &netVersion, const std::string &dllPath,
+                            const std::string &methodName, const std::string &arguments)
 {
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pid)))
-        return "failed to attach to process id " + std::to_string(pid);
+    blackbone::Process targetProcess;
+    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
+    {
+        return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
+    }
 
-    DWORD returnCode = 0;
-    bool success =
-        proc.modules().InjectPureIL(s2ws(netVersion), s2ws(dllPath), s2ws(methodName), s2ws(args), returnCode);
-    if (!success)
+    DWORD injectionReturnCode = 0;
+    bool executionSuccess = targetProcess.modules().InjectPureIL(
+        convertStringToWideString(netVersion),
+        convertStringToWideString(dllPath),
+        convertStringToWideString(methodName),
+        convertStringToWideString(arguments),
+        injectionReturnCode
+    );
+
+    if (!executionSuccess)
+    {
         return "pure il injection failed";
+    }
 
-    return "pure il injection successful return code " + std::to_string(returnCode);
+    return "pure il injection successful return code " + std::to_string(injectionReturnCode);
 }
 
-std::string kernelStandardInjection(DWORD pid, const std::string &dllPath)
+std::string kernelStandardInjection(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
-    std::string drvErr = loadDriver();
-    if (!drvErr.empty())
-        return drvErr;
+    std::string driverErrorMessage = loadDriver();
+    if (!driverErrorMessage.empty())
+    {
+        return driverErrorMessage;
+    }
 
-    NTSTATUS status = blackbone::Driver().InjectDll(pid, s2ws(dllPath), IT_Thread, 0, L"", false, false, true);
-    if (!NT_SUCCESS(status))
-        return "kernel injection failed status " + std::to_string(status);
+    NTSTATUS driverInjectionStatus = blackbone::Driver().InjectDll(
+        targetProcessIdentifier,
+        convertStringToWideString(dllPath),
+        IT_Thread,
+        0,
+        L"",
+        false,
+        false,
+        true
+    );
+
+    if (!NT_SUCCESS(driverInjectionStatus))
+    {
+        return "kernel injection failed status " + std::to_string(driverInjectionStatus);
+    }
 
     return "kernel injection successful";
 }
 
-std::string kernelManualMap(DWORD pid, const std::string &dllPath)
+std::string kernelManualMap(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
-    std::string drvErr = loadDriver();
-    if (!drvErr.empty())
-        return drvErr;
+    std::string driverErrorMessage = loadDriver();
+    if (!driverErrorMessage.empty())
+    {
+        return driverErrorMessage;
+    }
 
-    KMmapFlags flags = static_cast<KMmapFlags>(KManualImports | KWipeHeader | KHideVAD);
-    NTSTATUS status = blackbone::Driver().MmapDll(pid, s2ws(dllPath), flags);
-    if (!NT_SUCCESS(status))
-        return "kernel manual mapping failed status " + std::to_string(status);
+    KMmapFlags kernelMappingFlags = static_cast<KMmapFlags>(KManualImports | KWipeHeader | KHideVAD);
+    NTSTATUS kernelMappingStatus = blackbone::Driver().MmapDll(
+        targetProcessIdentifier,
+        convertStringToWideString(dllPath),
+        kernelMappingFlags
+    );
+
+    if (!NT_SUCCESS(kernelMappingStatus))
+    {
+        return "kernel manual mapping failed status " + std::to_string(kernelMappingStatus);
+    }
 
     return "kernel manual mapping successful";
 }
 
 std::vector<procInfo> getProcs()
 {
-    std::vector<procInfo> procs;
-    auto result = blackbone::Process::EnumByNameOrPID(0, L"");
+    std::vector<procInfo> processList;
+    auto enumerationResult = blackbone::Process::EnumByNameOrPID(0, L"");
 
-    if (result)
+    if (enumerationResult)
     {
-        for (const auto &p : result.result())
+        for (const auto &processEntry : enumerationResult.result())
         {
-            procInfo info;
-            info.pid = p.pid;
-            info.name = ws2s(p.imageName);
+            procInfo information;
+            information.pid = processEntry.pid;
+            information.name = convertWideStringToString(processEntry.imageName);
 
-            blackbone::Process tempProc;
-            if (NT_SUCCESS(tempProc.Attach(p.pid, PROCESS_QUERY_LIMITED_INFORMATION)))
+            blackbone::Process temporaryProcess;
+            if (NT_SUCCESS(temporaryProcess.Attach(processEntry.pid, PROCESS_QUERY_LIMITED_INFORMATION)))
             {
-                info.arch = tempProc.core().isWow64() ? "x86" : "x64";
-                tempProc.Detach();
+                information.arch = temporaryProcess.core().isWow64() ? "x86" : "x64";
+                temporaryProcess.Detach();
             }
             else
             {
-                info.arch = "n/a";
+                information.arch = "n/a";
             }
-            procs.push_back(info);
+            processList.push_back(information);
         }
     }
-    return procs;
+    return processList;
 }
 
-std::string injectApc(DWORD pID, const std::string &dllPath)
+std::string injectApc(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pID)))
+    blackbone::Process targetProcess;
+    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
     {
-        return "Failed to attach to process.";
+        return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
     }
 
-    std::wstring wDllPath = s2ws(dllPath);
+    std::wstring wideDllPath = convertStringToWideString(dllPath);
 
-    auto expData = proc.modules().GetExport(L"kernel32.dll", "LoadLibraryW");
-    if (!NT_SUCCESS(expData.status))
+    auto exportData = targetProcess.modules().GetExport(L"kernel32.dll", "LoadLibraryW");
+    if (!NT_SUCCESS(exportData.status))
     {
-        return "Failed to find LoadLibraryW.";
+        return "failed to find LoadLibraryW export in kernel32";
     }
 
-    size_t pathSize = (wDllPath.length() + 1) * sizeof(wchar_t);
-    auto memData = proc.memory().Allocate(pathSize, PAGE_READWRITE, 0, false);
+    size_t requiredPathSizeBytes = (wideDllPath.length() + 1) * sizeof(wchar_t);
+    auto allocatedMemory = targetProcess.memory().Allocate(requiredPathSizeBytes, PAGE_READWRITE, 0, false);
 
-    if (!NT_SUCCESS(memData.status))
+    if (!NT_SUCCESS(allocatedMemory.status))
     {
-        return "Memory allocation failed.";
+        return "memory allocation failed in target process";
     }
 
-    memData->Write(0, pathSize, wDllPath.c_str());
+    allocatedMemory->Write(0, requiredPathSizeBytes, wideDllPath.c_str());
 
-    auto threads = proc.threads().getAll();
-    if (threads.empty())
+    auto processThreads = targetProcess.threads().getAll();
+    if (processThreads.empty())
     {
-        return "Process has no active threads.";
+        return "process has no active threads";
     }
 
-    int queuedAPCs = 0;
+    int queuedApcCount = 0;
 
-    for (auto &thd : threads)
+    for (auto &individualThread : processThreads)
     {
-
-        if (thd->Suspended())
-            continue;
-
-        NTSTATUS status = proc.core().native()->QueueApcT(thd->handle(), expData->procAddress, memData->ptr());
-
-        if (NT_SUCCESS(status))
+        if (individualThread->Suspended())
         {
-            queuedAPCs++;
+            continue;
+        }
+
+        NTSTATUS queueStatus = targetProcess.core().native()->QueueApcT(
+            individualThread->handle(),
+            exportData->procAddress,
+            allocatedMemory->ptr()
+        );
+
+        if (NT_SUCCESS(queueStatus))
+        {
+            queuedApcCount++;
         }
     }
 
-    if (queuedAPCs == 0)
+    if (queuedApcCount == 0)
     {
-        return "Failed to queue APCs: No suitable active threads found.";
+        return "failed to queue apc no suitable active threads found";
     }
 
-    bool successfullyLoaded = false;
+    bool successfullyLoadedModule = false;
 
-    for (int i = 0; i < 20; i++)
+    for (int retryAttempt = 0; retryAttempt < 20; retryAttempt++)
     {
         Sleep(50);
 
-        if (proc.modules().GetModule(wDllPath) != nullptr)
+        if (targetProcess.modules().GetModule(wideDllPath) != nullptr)
         {
-            successfullyLoaded = true;
+            successfullyLoadedModule = true;
             break;
         }
     }
 
-    if (!successfullyLoaded)
+    if (!successfullyLoadedModule)
     {
-        return "APCs queued, but DLL did not load within timeout. Threads may not be in an alertable wait state.";
+        return "apc queued but module did not load within timeout alertable state required";
     }
 
-    return "";
+    return "apc injection successful";
 }
 
-std::string injectThreadHijack(DWORD pID, const std::string &dllPath)
+std::string injectThreadHijack(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pID)))
-        return "failed to attach to process";
-
-    std::wstring wDllPath = s2ws(dllPath);
-    blackbone::ThreadPtr targetThread = nullptr;
-
-    auto threads = proc.threads().getAll();
-    auto mainThread = proc.threads().getMain();
-
-    uint64_t maxExecTime = 0;
-
-    for (auto &thd : threads)
+    blackbone::Process targetProcess;
+    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
     {
+        return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
+    }
 
-        if (mainThread && thd->id() == mainThread->id())
-            continue;
+    std::wstring wideDllPath = convertStringToWideString(dllPath);
+    blackbone::ThreadPtr targetThreadPointer = targetProcess.threads().getMain();
 
-        if (thd->Suspended())
-            continue;
-
-        uint64_t currentExecTime = thd->execTime();
-
-        if (currentExecTime >= maxExecTime)
+    if (!targetThreadPointer || targetThreadPointer->Suspended())
+    {
+        auto allThreads = targetProcess.threads().getAll();
+        for (auto &individualThread : allThreads)
         {
-            maxExecTime = currentExecTime;
-            targetThread = thd;
+            if (!individualThread->Suspended())
+            {
+                targetThreadPointer = individualThread;
+                break;
+            }
         }
     }
 
-    if (!targetThread)
-        targetThread = mainThread;
-
-    if (!targetThread)
+    if (!targetThreadPointer)
+    {
         return "failed to locate a suitable thread to hijack";
+    }
 
     try
     {
+        auto hijackResult = targetProcess.modules().Inject(wideDllPath, targetThreadPointer);
 
-        auto result = proc.modules().Inject(wDllPath, targetThread);
-
-        if (!NT_SUCCESS(result.status))
-            return "hijack injection failed status " + std::to_string(result.status);
+        if (!NT_SUCCESS(hijackResult.status))
+        {
+            return "hijack injection failed status " + std::to_string(hijackResult.status);
+        }
     }
-    catch (const std::exception &e)
+    catch (const std::exception &caughtException)
     {
-        return std::string("injector crashed with exception: ") + e.what();
+        return std::string("injector exception occurred ") + caughtException.what();
     }
     catch (...)
     {
-        return "injector crashed with unknown memory exception";
+        return "injector caught unknown memory exception";
     }
 
-    return "";
+    return "thread hijack injection successful";
 }
 
-std::string injectBlackBone(DWORD pID, const std::string &dllPath, bool erasePE, bool hideModule)
+std::string injectBlackBone(DWORD targetProcessIdentifier, const std::string &dllPath, bool erasePeHeaders, bool hideModuleMemory)
 {
-    std::string driver_err = loadDriver();
-    if (!driver_err.empty())
-        return driver_err;
+    blackbone::Process targetProcess;
+    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
+    {
+        return "blackbone failed to attach to process id " + std::to_string(targetProcessIdentifier);
+    }
 
-    blackbone::Process proc;
-    if (!NT_SUCCESS(proc.Attach(pID)))
-        return "blackbone failed to attach to process";
+    blackbone::eLoadFlags mappingFlags = blackbone::NoFlags;
+    if (!hideModuleMemory)
+    {
+        mappingFlags |= blackbone::CreateLdrRef;
+    }
+    if (erasePeHeaders)
+    {
+        mappingFlags |= blackbone::WipeHeader;
+    }
 
-    blackbone::eLoadFlags flags = blackbone::CreateLdrRef;
-    if (erasePE)
-        flags |= blackbone::WipeHeader;
-    if (hideModule)
-        flags |= blackbone::HideVAD;
+    auto mappingResult = targetProcess.mmap().MapImage(convertStringToWideString(dllPath), mappingFlags);
+    targetProcess.Detach();
 
-    auto result = proc.mmap().MapImage(s2ws(dllPath), flags);
-    proc.Detach();
-
-    if (!result)
-        return "blackbone injection failed status " + std::to_string(result.status);
+    if (!mappingResult)
+    {
+        return "blackbone injection failed status " + std::to_string(mappingResult.status);
+    }
     return "blackbone injection successful";
 }
-} // namespace injector
+}
