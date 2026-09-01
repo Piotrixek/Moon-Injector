@@ -44,6 +44,39 @@ static std::string convertWideStringToString(const std::wstring &sourceWideStrin
     return stringDestination;
 }
 
+static bool enableDebugPrivilege()
+{
+    HANDLE tokenHandle = NULL;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &tokenHandle))
+    {
+        return false;
+    }
+    LUID luidValue = {0};
+    if (!LookupPrivilegeValueA(NULL, "SeDebugPrivilege", &luidValue))
+    {
+        CloseHandle(tokenHandle);
+        return false;
+    }
+    TOKEN_PRIVILEGES tokenPrivileges = {0};
+    tokenPrivileges.PrivilegeCount = 1;
+    tokenPrivileges.Privileges[0].Luid = luidValue;
+    tokenPrivileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    bool adjustmentSuccess = AdjustTokenPrivileges(tokenHandle, FALSE, &tokenPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL);
+    CloseHandle(tokenHandle);
+    return adjustmentSuccess;
+}
+
+static NTSTATUS attachToTargetProcess(blackbone::Process &targetProcess, DWORD targetProcessIdentifier)
+{
+    enableDebugPrivilege();
+    NTSTATUS status = targetProcess.Attach(targetProcessIdentifier);
+    if (!NT_SUCCESS(status))
+    {
+        status = targetProcess.Attach(targetProcessIdentifier, PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ);
+    }
+    return status;
+}
+
 static bool isWindowsTestModeEnabled()
 {
     HMODULE ntdllModuleHandle = GetModuleHandleA("ntdll.dll");
@@ -107,7 +140,7 @@ static std::string loadDriver()
 std::string professionalManualMap(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
     blackbone::Process targetProcess;
-    NTSTATUS attachmentStatus = targetProcess.Attach(targetProcessIdentifier);
+    NTSTATUS attachmentStatus = attachToTargetProcess(targetProcess, targetProcessIdentifier);
     if (!NT_SUCCESS(attachmentStatus))
     {
         return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
@@ -127,16 +160,62 @@ std::string professionalManualMap(DWORD targetProcessIdentifier, const std::stri
 std::string standardInjection(DWORD targetProcessIdentifier, const std::string &dllPath)
 {
     blackbone::Process targetProcess;
-    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
+    if (NT_SUCCESS(attachToTargetProcess(targetProcess, targetProcessIdentifier)))
     {
-        return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
+        auto injectionResult = targetProcess.modules().Inject(convertStringToWideString(dllPath));
+        if (NT_SUCCESS(injectionResult.status))
+        {
+            return "standard injection successful";
+        }
     }
 
-    auto injectionResult = targetProcess.modules().Inject(convertStringToWideString(dllPath));
-    if (!NT_SUCCESS(injectionResult.status))
+    HANDLE processHandle = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, targetProcessIdentifier);
+    if (!processHandle)
     {
-        return "standard injection failed status " + std::to_string(injectionResult.status);
+        processHandle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetProcessIdentifier);
     }
+    if (!processHandle)
+    {
+        return "failed to open process id " + std::to_string(targetProcessIdentifier) + " with error code " + std::to_string(GetLastError());
+    }
+
+    std::wstring wideDllPath = convertStringToWideString(dllPath);
+    size_t allocationSize = (wideDllPath.length() + 1) * sizeof(wchar_t);
+    LPVOID remoteMemoryAddress = VirtualAllocEx(processHandle, NULL, allocationSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!remoteMemoryAddress)
+    {
+        CloseHandle(processHandle);
+        return "failed to allocate memory in process id " + std::to_string(targetProcessIdentifier);
+    }
+
+    SIZE_T bytesWritten = 0;
+    if (!WriteProcessMemory(processHandle, remoteMemoryAddress, wideDllPath.c_str(), allocationSize, &bytesWritten))
+    {
+        VirtualFreeEx(processHandle, remoteMemoryAddress, 0, MEM_RELEASE);
+        CloseHandle(processHandle);
+        return "failed to write memory in process id " + std::to_string(targetProcessIdentifier);
+    }
+
+    HMODULE kernel32Module = GetModuleHandleA("kernel32.dll");
+    FARPROC loadLibraryAddress = GetProcAddress(kernel32Module, "LoadLibraryW");
+    if (!loadLibraryAddress)
+    {
+        VirtualFreeEx(processHandle, remoteMemoryAddress, 0, MEM_RELEASE);
+        CloseHandle(processHandle);
+        return "failed to locate LoadLibraryW address";
+    }
+
+    HANDLE threadHandle = CreateRemoteThread(processHandle, NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(loadLibraryAddress), remoteMemoryAddress, 0, NULL);
+    if (!threadHandle)
+    {
+        VirtualFreeEx(processHandle, remoteMemoryAddress, 0, MEM_RELEASE);
+        CloseHandle(processHandle);
+        return "failed to create remote thread in process id " + std::to_string(targetProcessIdentifier);
+    }
+
+    WaitForSingleObject(threadHandle, 5000);
+    CloseHandle(threadHandle);
+    CloseHandle(processHandle);
 
     return "standard injection successful";
 }
@@ -145,7 +224,7 @@ std::string pureILInjection(DWORD targetProcessIdentifier, const std::string &ne
                             const std::string &methodName, const std::string &arguments)
 {
     blackbone::Process targetProcess;
-    if (!NT_SUCCESS(targetProcess.Attach(targetProcessIdentifier)))
+    if (!NT_SUCCESS(attachToTargetProcess(targetProcess, targetProcessIdentifier)))
     {
         return "failed to attach to process id " + std::to_string(targetProcessIdentifier);
     }

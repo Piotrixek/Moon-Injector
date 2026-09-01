@@ -1,0 +1,385 @@
+import { Server } from "@modelcontextprotocol/sdk/server/index.js"
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { runMoonCommand } from "./tools/cliBridge.js"
+
+const serverInstance = new Server(
+  {
+    name: "moon-injector-mcp",
+    version: "2.0.0"
+  },
+  {
+    capabilities: {
+      tools: {}
+    }
+  }
+)
+
+serverInstance.setRequestHandler(ListToolsRequestSchema, async () => {
+  return {
+    tools: [
+      {
+        name: "list_processes",
+        description: "List all currently running processes in Windows using Moon Injector native C++ routine with Process ID, Process Name, and Architecture (x86/x64).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            processNameFilter: {
+              type: "string",
+              description: "Optional filter to match process names (case-insensitive substring)."
+            }
+          }
+        }
+      },
+      {
+        name: "get_process_modules",
+        description: "Get all dynamic link libraries and modules loaded into the memory space of a specific process using native C++ BlackBone engine.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            processIdentifier: {
+              type: "number",
+              description: "The process ID (PID) to inspect."
+            }
+          },
+          required: ["processIdentifier"]
+        }
+      },
+      {
+        name: "get_injection_methods",
+        description: "Retrieve all supported injection techniques in Moon Injector with technical details, stealth ratings, and driver requirements.",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
+      },
+      {
+        name: "inject_dll",
+        description: "Inject a Dynamic Link Library (.dll) into a target process memory using Moon Injector native C++ and BlackBone engine.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            processIdentifier: {
+              type: "number",
+              description: "The process ID (PID) of the target process."
+            },
+            dynamicLinkLibraryPath: {
+              type: "string",
+              description: "Absolute path to the dynamic link library (.dll) file to inject."
+            },
+            injectionMethod: {
+              type: "string",
+              enum: ["standard", "manual_map", "apc", "thread_hijack", "blackbone", "pure_il", "kernel_standard", "kernel_manual_map"],
+              description: "The injection technique to use (defaults to 'standard')."
+            },
+            erasePeHeaders: {
+              type: "boolean",
+              description: "Erase PE headers after manual mapping (for BlackBone methods)."
+            },
+            hideModuleMemory: {
+              type: "boolean",
+              description: "Hide module memory and unregister from loader (for BlackBone methods)."
+            },
+            dotNetVersion: {
+              type: "string",
+              description: "Target CLR version for pure IL injection (for example 'v4.0.30319')."
+            },
+            dotNetMethodName: {
+              type: "string",
+              description: "Namespace.Class.Method name for pure IL injection."
+            },
+            dotNetArguments: {
+              type: "string",
+              description: "Optional argument string for pure IL injection."
+            }
+          },
+          required: ["processIdentifier", "dynamicLinkLibraryPath"]
+        }
+      },
+      {
+        name: "eject_dll",
+        description: "Eject and unload a previously injected Dynamic Link Library module from a target process memory space using native C++ BlackBone engine.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            processIdentifier: {
+              type: "number",
+              description: "The process ID (PID) of the target process."
+            },
+            moduleName: {
+              type: "string",
+              description: "The file name or path of the module to unload (for example: 'payload.dll')."
+            }
+          },
+          required: ["processIdentifier", "moduleName"]
+        }
+      },
+      {
+        name: "get_saved_workspaces",
+        description: "Retrieve all saved workspaces from Moon Injector SQLite database using native C++ DBHandler.",
+        inputSchema: {
+          type: "object",
+          properties: {}
+        }
+      },
+      {
+        name: "create_workspace",
+        description: "Create a new workspace profile in the Moon Injector SQLite database using native C++ DBHandler.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspaceName: {
+              type: "string",
+              description: "The name of the new workspace profile."
+            }
+          },
+          required: ["workspaceName"]
+        }
+      },
+      {
+        name: "delete_workspace",
+        description: "Delete an existing workspace profile and its associated dynamic link library configurations using native C++ DBHandler.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspaceIdentifier: {
+              type: "number",
+              description: "The unique identifier of the workspace to delete."
+            }
+          },
+          required: ["workspaceIdentifier"]
+        }
+      },
+      {
+        name: "get_workspace_dlls",
+        description: "Get all saved dynamic link library paths assigned to a specific workspace profile using native C++ DBHandler.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspaceIdentifier: {
+              type: "number",
+              description: "The unique identifier of the workspace profile."
+            }
+          },
+          required: ["workspaceIdentifier"]
+        }
+      },
+      {
+        name: "sync_workspace_dlls",
+        description: "Synchronize and update the dynamic link library list for a given workspace profile using native C++ DBHandler.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            workspaceIdentifier: {
+              type: "number",
+              description: "The unique identifier of the workspace profile."
+            },
+            dynamicLinkLibraryPaths: {
+              type: "array",
+              items: {
+                type: "string"
+              },
+              description: "List of absolute file paths to dynamic link libraries."
+            }
+          },
+          required: ["workspaceIdentifier", "dynamicLinkLibraryPaths"]
+        }
+      }
+    ]
+  }
+})
+
+serverInstance.setRequestHandler(CallToolRequestSchema, async (incomingRequest) => {
+  const requestedToolName = incomingRequest.params.name
+  const toolArguments = incomingRequest.params.arguments || {}
+
+  try {
+    if (requestedToolName === "list_processes") {
+      const runningProcessesList = await runMoonCommand(["list-processes"])
+      let filteredProcesses = Array.isArray(runningProcessesList) ? runningProcessesList : []
+      if (toolArguments.processNameFilter) {
+        const filterKeyword = String(toolArguments.processNameFilter).toLowerCase()
+        filteredProcesses = filteredProcesses.filter(singleProcess =>
+          singleProcess.processName && singleProcess.processName.toLowerCase().includes(filterKeyword)
+        )
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(filteredProcesses, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "get_process_modules") {
+      const targetProcessIdentifier = String(toolArguments.processIdentifier)
+      const processModulesList = await runMoonCommand(["get-process-modules", "--pid", targetProcessIdentifier])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(processModulesList, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "get_injection_methods") {
+      const methodsList = await runMoonCommand(["get-methods"])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(methodsList, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "inject_dll") {
+      const commandArguments = [
+        "inject",
+        "--pid",
+        String(toolArguments.processIdentifier),
+        "--dll",
+        String(toolArguments.dynamicLinkLibraryPath),
+        "--method",
+        String(toolArguments.injectionMethod || "standard")
+      ]
+
+      if (toolArguments.erasePeHeaders) {
+        commandArguments.push("--erase-pe")
+      }
+      if (toolArguments.hideModuleMemory) {
+        commandArguments.push("--hide-module")
+      }
+      if (toolArguments.dotNetVersion) {
+        commandArguments.push("--net-version", String(toolArguments.dotNetVersion))
+      }
+      if (toolArguments.dotNetMethodName) {
+        commandArguments.push("--method-name", String(toolArguments.dotNetMethodName))
+      }
+      if (toolArguments.dotNetArguments) {
+        commandArguments.push("--args", String(toolArguments.dotNetArguments))
+      }
+
+      const injectionResult = await runMoonCommand(commandArguments)
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(injectionResult, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "eject_dll") {
+      const targetProcessIdentifier = String(toolArguments.processIdentifier)
+      const targetModuleName = String(toolArguments.moduleName)
+      const ejectionResult = await runMoonCommand(["eject", "--pid", targetProcessIdentifier, "--module", targetModuleName])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(ejectionResult, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "get_saved_workspaces") {
+      const workspacesList = await runMoonCommand(["get-workspaces"])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(workspacesList, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "create_workspace") {
+      const workspaceName = String(toolArguments.workspaceName)
+      const creationResult = await runMoonCommand(["create-workspace", "--name", workspaceName])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(creationResult, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "delete_workspace") {
+      const workspaceIdentifier = String(toolArguments.workspaceIdentifier)
+      const deletionResult = await runMoonCommand(["delete-workspace", "--id", workspaceIdentifier])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(deletionResult, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "get_workspace_dlls") {
+      const workspaceIdentifier = String(toolArguments.workspaceIdentifier)
+      const dynamicLinkLibraries = await runMoonCommand(["get-workspace-dlls", "--id", workspaceIdentifier])
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(dynamicLinkLibraries, null, 2)
+          }
+        ]
+      }
+    }
+
+    if (requestedToolName === "sync_workspace_dlls") {
+      const workspaceIdentifier = String(toolArguments.workspaceIdentifier)
+      const paths = Array.isArray(toolArguments.dynamicLinkLibraryPaths) ? toolArguments.dynamicLinkLibraryPaths : []
+      const commandArguments = ["sync-workspace-dlls", "--id", workspaceIdentifier]
+      for (const singlePath of paths) {
+        commandArguments.push("--dll", singlePath)
+      }
+      const synchronizationResult = await runMoonCommand(commandArguments)
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(synchronizationResult, null, 2)
+          }
+        ]
+      }
+    }
+
+    throw new Error(`Tool not found: ${requestedToolName}`)
+  } catch (executionError) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            error: executionError.message || String(executionError)
+          }, null, 2)
+        }
+      ],
+      isError: true
+    }
+  }
+})
+
+async function startServer() {
+  const transport = new StdioServerTransport()
+  await serverInstance.connect(transport)
+}
+
+startServer().catch((fatalError) => {
+  process.exit(1)
+})
