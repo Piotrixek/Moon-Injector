@@ -39,7 +39,13 @@ The project builds both the GUI executable (`MoonInjector.exe`) and the headless
 ```cmd
 MoonCLI.exe list-processes
 MoonCLI.exe get-process-modules --pid <PID>
-MoonCLI.exe inject --pid <PID> --dll <PATH_TO_DLL> --method <standard|manual_map|apc|thread_hijack|blackbone|pure_il|kernel_standard|kernel_manual_map>
+MoonCLI.exe check-debug-info --dll <PATH_TO_DLL>
+MoonCLI.exe inject --pid <PID> --dll <PATH_TO_DLL> --method <standard|manual_map|apc|thread_hijack|blackbone|pure_il|kernel_standard|kernel_manual_map> [--debug] [--dump-dir <PATH>]
+MoonCLI.exe debug-watch --pid <PID> --dll <PATH_TO_DLL> [--dump-dir <PATH>]
+MoonCLI.exe get-crash-reports [--dir <PATH>]
+MoonCLI.exe get-latest-crash [--pid <PID>] [--dir <PATH>]
+MoonCLI.exe resume-process --pid <PID>
+MoonCLI.exe terminate-process --pid <PID>
 MoonCLI.exe eject --pid <PID> --module <MODULE_NAME>
 MoonCLI.exe get-methods
 MoonCLI.exe get-workspaces
@@ -60,7 +66,12 @@ An official MCP server is located in the `mcp_server/` directory. It provides na
 * `list_processes`
 * `get_process_modules`
 * `get_injection_methods`
-* `inject_dll`
+* `check_dll_debug_info`
+* `inject_dll` (supports `enableDebugging: true`)
+* `get_crash_reports`
+* `get_latest_crash`
+* `resume_process`
+* `terminate_process`
 * `eject_dll`
 * `get_saved_workspaces`
 * `create_workspace`
