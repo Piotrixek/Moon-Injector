@@ -106,6 +106,16 @@ static BOOL CALLBACK EnumerateSymbolsCallback(PSYMBOL_INFO symbolInformation, UL
     }
 
     SymbolEnumerationContext *context = reinterpret_cast<SymbolEnumerationContext *>(userContextPointer);
+    if (context->variableCollection->size() >= 20)
+    {
+        return FALSE;
+    }
+
+    if (!(symbolInformation->Flags & SYMFLAG_LOCAL) && !(symbolInformation->Flags & SYMFLAG_PARAMETER))
+    {
+        return TRUE;
+    }
+
     VariableInformation variableInfo;
     variableInfo.variableName = symbolInformation->Name;
     variableInfo.size = symbolInformation->Size;
@@ -557,9 +567,8 @@ bool runCrashDebuggerSession(DWORD targetProcessIdentifier, const std::string &t
                     exceptionPointersStructure.ContextRecord = &threadContext;
 
                     exceptionInformation.ExceptionPointers = &exceptionPointersStructure;
-                    exceptionInformation.ClientPointers = FALSE;
-
-                    MiniDumpWriteDump(targetProcessHandle, targetProcessIdentifier, dumpFileHandle, MiniDumpWithFullMemory, &exceptionInformation, NULL, NULL);
+                    MINIDUMP_TYPE dumpFlags = static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithHandleData | MiniDumpWithUnloadedModules | MiniDumpWithThreadInfo | MiniDumpWithIndirectlyReferencedMemory);
+                    MiniDumpWriteDump(targetProcessHandle, targetProcessIdentifier, dumpFileHandle, dumpFlags, &exceptionInformation, NULL, NULL);
                     CloseHandle(dumpFileHandle);
 
                     if (faultingThreadHandle)
@@ -619,7 +628,7 @@ bool runCrashDebuggerSession(DWORD targetProcessIdentifier, const std::string &t
                         int frameCounter = 0;
                         while (StackWalk64(machineArchitecture, targetProcessHandle, faultingThreadHandle, &stackFrame, &threadContext, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
                         {
-                            if (stackFrame.AddrPC.Offset == 0)
+                            if (stackFrame.AddrPC.Offset == 0 || frameCounter >= 64)
                             {
                                 break;
                             }
@@ -665,7 +674,7 @@ bool runCrashDebuggerSession(DWORD targetProcessIdentifier, const std::string &t
                                 enumContext.currentStackFrame = stackFrame;
                                 enumContext.variableCollection = &singleFrame.localVariables;
 
-                                SymEnumSymbols(targetProcessHandle, 0, "*", EnumerateSymbolsCallback, &enumContext);
+                                SymEnumSymbols(targetProcessHandle, 0, NULL, EnumerateSymbolsCallback, &enumContext);
                             }
 
                             outputReport.callStackTrace.push_back(singleFrame);
